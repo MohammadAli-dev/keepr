@@ -87,12 +87,18 @@ Following the core implementation, a targeted refactor was executed to harden th
 *   **Ownership Service:** Introduced a centralized `DeviceOwnershipService` to encapsulate all cross-module existence and multitenancy checks. This ensures `WarrantyService` (and future modules) cannot accidentally interact with non-owned or deleted devices.
 *   **Overlap Prevention:** Implemented a non-overlapping date check for identically-typed warranties on a single device, preventing logical data corruption.
 
-### 4. Database Optimization (V11)
-*   `idx_auth_otp_phone_number`: Optimized the OTP verification flow.
-*   `idx_devices_household_deleted`: High-performance scoping for device list and lookup.
-*   `idx_warranties_device_household_deleted`: Optimized the overlap validation query path.
+### 4. Database Optimization (V11 & V12)
+*   **V11 Improvements:**
+    *   `idx_auth_otp_phone_number`: Optimized the OTP verification flow.
+    *   `idx_devices_household_deleted`: High-performance scoping for device list and lookup.
+    *   `idx_warranties_device_household_deleted`: Optimized the overlap validation query path.
+*   **V12 Device Uniqueness:**
+    *   Added a conditional unique index: `idx_devices_unique_active` on `(household_id, name, brand, model)` where `deleted_at IS NULL`. This prevents duplicate active devices within a household.
 
-### 5. Verified Integrity
+### 5. API & Repository Hardening
+*   **Direct Warranty Lookup:** Added `findByIdAndHouseholdIdAndDeletedAtIsNull` to `WarrantyRepository` to support direct, secure warranty retrieval (required for Sprint 4 invoice linking).
+
+### 6. Verified Integrity
 Added **5 new integration test scenarios** to the suite, covering:
 *   Invalid enum value rejection (400).
 *   Correct filtering of soft-deleted records from lists and owner-checks.
@@ -101,4 +107,4 @@ Added **5 new integration test scenarios** to the suite, covering:
 ---
 
 ### Final Outcome ✅
-Sprint 3 and its subsequent Stability & Integrity Refactor successfully establish a high-trust, production-ready foundation for the Keepr data ecosystem. All 34 source files are checkstyle-compliant, 29/29 tests are confirmed green, and the architecture is securely prepared for **Sprint 4 (Invoice Ingestion & Extraction)**.
+Sprint 3 and its subsequent Stability & Integrity Refactors successfully establish a high-trust, production-ready foundation for the Keepr data ecosystem. All 34 source files are checkstyle-compliant, 29/29 tests are confirmed green, and the architecture is securely prepared for **Sprint 4 (Invoice Ingestion & Extraction)**.

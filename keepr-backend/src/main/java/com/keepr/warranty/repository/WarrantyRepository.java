@@ -1,6 +1,7 @@
 package com.keepr.warranty.repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.keepr.warranty.model.Warranty;
@@ -31,4 +32,13 @@ public interface WarrantyRepository extends JpaRepository<Warranty, UUID> {
      * @return list of active warranties for the given device
      */
     List<Warranty> findAllByDeviceIdAndHouseholdIdAndDeletedAtIsNull(UUID deviceId, UUID householdId);
+    /**
+     * Finds a warranty by its ID and household ID that is not deleted.
+     * Used for direct warranty lookup and permission checking.
+     *
+     * @param warrantyId  the warranty UUID
+     * @param householdId the household UUID
+     * @return the active warranty if found
+     */
+    Optional<Warranty> findByIdAndHouseholdIdAndDeletedAtIsNull(UUID warrantyId, UUID householdId);
 }
