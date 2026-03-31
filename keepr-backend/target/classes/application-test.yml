@@ -13,3 +13,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+
+keepr:
+  jwt:
+    secret: test-secret-key-must-be-at-least-32-characters-long-for-hmac

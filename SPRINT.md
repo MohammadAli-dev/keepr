@@ -1,25 +1,24 @@
-# 🛡️ SPRINT.md — Sprint 2: Authentication (Keepr)
+# 🛡️ SPRINT.md — Sprint 3: Device & Warranty Foundation (Keepr)
 
 ## 🎯 Sprint Goal
 
-Implement a **minimal, production-safe authentication system** using:
+Enable users to:
 
-* OTP-based login (no passwords)
-* JWT-based stateless authentication
-* Automatic user + household provisioning
+1. Add devices
+2. Attach warranties
+3. View their devices scoped to their household
 
-This sprint establishes the **identity layer** for Keepr.
+👉 This creates the **first usable product experience**
 
 ---
 
-## ⚠️ Core Principles (Inherited from Sprint 1)
+## ⚠️ Core Principles (Inherited)
 
-From Sprint 1 foundation:
-
-* **Database is the source of truth** (not Redis)
-* **Strict multi-tenancy enforced at DB level**
-* **No orphaned data allowed**
-* **Idempotent and race-safe operations**
+* DB is source of truth
+* Strict multi-tenancy (household_id everywhere)
+* No orphaned data
+* Stateless JWT auth enforced
+* Services communicate via service layer only
 
 ---
 
@@ -27,147 +26,151 @@ From Sprint 1 foundation:
 
 ### ✅ Included
 
-1. OTP generation and verification (DB-backed)
-2. JWT access token generation & validation
-3. User creation (if new)
-4. Household creation (if new)
-5. household_members entry (OWNER role)
-6. AuthController (`/auth/send-otp`, `/auth/verify-otp`)
-7. JwtAuthFilter
-8. SecurityConfig (stateless JWT)
+1. Device CRUD (create + list)
+2. Warranty creation (manual entry only)
+3. Household-scoped access control
+4. Device ↔ Warranty linkage
+5. Basic validation
 
 ---
 
-### ❌ Explicitly Excluded
+### ❌ Excluded
 
-* Refresh tokens
-* Logout
-* Rate limiting
-* Third-party auth (Firebase, OAuth)
-* Email/password login
-
----
-
-## 🔐 OTP Architecture
-
-### Source of Truth: **Database (`auth_otp` table)**
-
-Redis may be used optionally for caching but:
-
-> ❗ OTP correctness MUST NOT depend on Redis
+* Invoice parsing (Sprint 4)
+* OCR / AI extraction
+* Notifications
+* Editing/deleting devices
+* File uploads
 
 ---
 
-## 📲 OTP Flow
+## 📦 Data Model
 
-### 1. Send OTP
+### Device
 
-* Input: phone number
-* Normalize to 10-digit format
-* Generate 6-digit OTP
-* Store in `auth_otp` table:
-
-  * phone_number
-  * otp
-  * expiry_time (10 min)
-  * created_at
-* Return success response
-
----
-
-### 2. Verify OTP
-
-* Normalize phone number
-* Validate OTP format (6-digit numeric)
-* Fetch latest OTP from DB
-* Validate:
-
-  * Exists
-  * Not expired
-  * Matches input
-* Mark OTP as used OR delete it
-* Proceed to authentication
+| Field         | Type          |
+| ------------- | ------------- |
+| id            | UUID          |
+| household_id  | UUID          |
+| name          | String        |
+| brand         | String        |
+| model         | String        |
+| purchase_date | LocalDate     |
+| created_at    | LocalDateTime |
 
 ---
 
-## 👤 User Provisioning Logic
+### Warranty
 
-### New User
-
-If phone not found:
-
-1. Create `User`
-2. Create `Household`
-3. Insert into `household_members`:
-
-   * role = OWNER
-
----
-
-### Existing User
-
-* Fetch user by phone number
-* Fetch household via `owner_user_id`
+| Field        | Type          |
+| ------------ | ------------- |
+| id           | UUID          |
+| device_id    | UUID          |
+| household_id | UUID          |
+| start_date   | LocalDate     |
+| end_date     | LocalDate     |
+| created_at   | LocalDateTime |
 
 ---
 
-## 🔁 Idempotency & Race Safety
+## 🔗 Relationships
 
-### Must Handle:
-
-* Duplicate OTP verification requests
-* Concurrent user creation
-
-### Rules:
-
-* Use unique constraint on `users.phone_number`
-* On insert failure:
-  → re-fetch existing user
-* OTP must be **single-use only**
+* 1 Household → Many Devices
+* 1 Device → Many Warranties
+* Warranty MUST always belong to same household as device
 
 ---
 
-## 🔑 JWT Requirements
+## 🔐 Access Control Rules
 
-* Stateless authentication
-* Signed with HMAC SHA256
-* Claims:
+From JWT:
 
-  * userId
-  * householdId
-  * phoneNumber
-* Expiry: 15 minutes
-* Allow small clock skew tolerance
+```java
+KeeprPrincipal(userId, householdId, phoneNumber)
+```
 
----
+👉 Every query MUST filter by:
 
-## 🔒 Security Layer
+```sql
+WHERE household_id = :householdId
+```
 
-### JwtAuthFilter
-
-* Extract Bearer token
-* Validate JWT
-* Populate SecurityContext with `KeeprPrincipal`
-
-### SecurityConfig
-
-* Stateless (no sessions)
-* Permit:
-
-  * POST /auth/send-otp
-  * POST /auth/verify-otp
-  * GET /health
-* All other endpoints require authentication
+❗ Never trust client input for household_id
 
 ---
 
-## 📦 Data Integrity Rules
+## 🧠 Business Rules
 
-* Phone number must always be normalized before use
-* No raw phone stored anywhere
-* OTP must always be 6 digits
-* OTP must expire after 10 minutes
-* OTP must be deleted or invalidated after use
+### Device Creation
+
+* Must belong to authenticated household
+* Name required
+* Purchase date cannot be in future
+
+---
+
+### Warranty Creation
+
+* Must reference an existing device
+* Device must belong to same household
+* end_date ≥ start_date
+
+---
+
+## 📡 API Endpoints
+
+### Device
+
+#### POST /devices
+
+Create new device
+
+Request:
+
+```json
+{
+  "name": "AC",
+  "brand": "LG",
+  "model": "DualCool",
+  "purchaseDate": "2024-06-01"
+}
+```
+
+Response:
+
+```json
+{
+  "deviceId": "...",
+  "name": "...",
+  "brand": "...",
+  "model": "...",
+  "purchaseDate": "..."
+}
+```
+
+---
+
+#### GET /devices
+
+List all devices for household
+
+---
+
+### Warranty
+
+#### POST /warranties
+
+Create warranty for device
+
+Request:
+
+```json
+{
+  "deviceId": "...",
+  "startDate": "2024-06-01",
+  "endDate": "2025-06-01"
+}
+```
 
 ---
 
@@ -175,86 +178,37 @@ If phone not found:
 
 ### Integration Tests
 
-1. sendOtp_validPhone_returns200
-2. sendOtp_invalidPhone_returns400
-3. sendOtp_phoneNormalisationWorks
-4. verifyOtp_correctOtp_returnsAccessToken
-5. verifyOtp_newUser_createsUserHouseholdAndMember
-6. verifyOtp_existingUser_returnsIsNewUserFalse
-7. verifyOtp_wrongOtp_returns401
-8. verifyOtp_expiredOtp_returns401
-9. verifyOtp_otpConsumedAfterSuccess
-10. verifyOtp_otpStoredInDatabase
-11. verifyOtp_concurrentRequests_onlyOneUserCreated
-12. healthEndpoint_noAuth_returns200
-13. protectedEndpoint_noJwt_returns401
-14. protectedEndpoint_validJwt_returnsNotUnauthorized
-15. protectedEndpoint_expiredJwt_returns401
-
----
-
-### Unit Tests
-
-* JwtService:
-
-  * Token generation
-  * Expiry validation
-  * Invalid/tampered token handling
-
----
-
-## 🧠 Design Decisions
-
-### Why DB-based OTP?
-
-* Survives restarts
-* Auditable
-* Consistent with DB-first architecture
-* Avoids cache inconsistency bugs
-
----
-
-### Why no refresh tokens?
-
-* Keep system simple in early stage
-* Reduce complexity in auth flows
-* Can be added later in Sprint 4+
+1. createDevice_valid_returns200
+2. createDevice_futurePurchaseDate_returns400
+3. listDevices_returnsOnlyHouseholdDevices
+4. createWarranty_valid_returns200
+5. createWarranty_invalidDate_returns400
+6. createWarranty_deviceNotFound_returns404
+7. createWarranty_crossHouseholdDevice_returns403
+8. protectedEndpoints_requireAuth
+9. devicesScopedToHousehold_correctly
 
 ---
 
 ## 🚨 Acceptance Criteria
 
-* User can log in via OTP
-* New users are automatically provisioned
-* JWT is issued and works for protected endpoints
-* No duplicate users created
-* OTP cannot be reused
-* System is safe under concurrent requests
+* User can create device
+* User can list devices
+* User can attach warranty
+* Data is strictly household-scoped
+* No cross-tenant leakage possible
 * All tests pass
+* Checkstyle passes
 
 ---
 
-## 📌 Output Expectations
+## 🚀 What This Unlocks
 
-At completion:
+* First real product value
+* Foundation for:
 
-* All endpoints working
-* All tests passing
-* No violations of Sprint 1 constraints
-* Code passes checkstyle
-* System is ready for Sprint 3
-
----
-
-## 🚀 What This Enables (Next Sprint)
-
-Sprint 2 unlocks:
-
-* Device registration
-* Invoice ingestion
-* Warranty tracking
-* Notification system
-
-👉 This is the foundation for all user-scoped data
+  * Invoice ingestion (Sprint 4)
+  * Warranty reminders (Sprint 5)
+  * Notifications
 
 ---

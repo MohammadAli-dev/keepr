@@ -19,3 +19,7 @@ spring:
 
 server:
   port: 8080
+
+keepr:
+  jwt:
+    secret: keepr-local-dev-secret-key-must-be-at-least-32-chars-long

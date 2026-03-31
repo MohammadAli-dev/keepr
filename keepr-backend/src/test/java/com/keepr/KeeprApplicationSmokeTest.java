@@ -100,7 +100,8 @@ class KeeprApplicationSmokeTest {
                 "extraction_jobs",
                 "notifications",
                 "household_invites",
-                "user_notification_preferences"
+                "user_notification_preferences",
+                "auth_otp"
         );
 
         List<String> actualTables = new ArrayList<>();
