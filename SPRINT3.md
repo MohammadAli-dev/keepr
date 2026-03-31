@@ -67,7 +67,38 @@ A comprehensive 11-test suite (`DeviceWarrantyIntegrationTest`) was added, runni
 
 ---
 
-### Final Outcome ✅
-Sprint 3 successfully establishes the foundational product data model. Users now have a secure, authenticated identity (Sprint 2) that they can use to manage their personal device inventory and warranty coverage. 
+---
 
-**Ready for Sprint 4 (Invoice Ingestion & Extraction).**
+## 🛠️ Stability & Integrity Refactor (Post-Sprint 3)
+
+Following the core implementation, a targeted refactor was executed to harden the data model and ensure long-term architectural stability.
+
+### 1. Robust Data Standardization (Enums)
+*   **Enums Deployed:** Replaced String-based fields with strict Enums:
+    *   `DeviceCategory`: `PHONE`, `TV`, `AC`, `FRIDGE`, `WASHING_MACHINE`, `LAPTOP`, `OTHER`.
+    *   `WarrantyType`: `MANUFACTURER`, `EXTENDED`, `AMC`.
+*   **Defensive Parsing:** Standardized input normalization (e.g., `"tv"` or `" TV "` → `TV`) with explicit null handling and centralized mapped error codes.
+
+### 2. Soft Delete Infrastructure
+*   **Persistent Archiving:** Added `@OffsetDateTime deletedAt` to both `Device` and `Warranty` entities.
+*   **Database Alignment:** Provided `V11` migration adding `deleted_at` columns and compound indexes (`household_id, deleted_at`) to optimize queries that now automatically exclude deleted records.
+
+### 3. Modular Integrity & Overlap Defense
+*   **Ownership Service:** Introduced a centralized `DeviceOwnershipService` to encapsulate all cross-module existence and multitenancy checks. This ensures `WarrantyService` (and future modules) cannot accidentally interact with non-owned or deleted devices.
+*   **Overlap Prevention:** Implemented a non-overlapping date check for identically-typed warranties on a single device, preventing logical data corruption.
+
+### 4. Database Optimization (V11)
+*   `idx_auth_otp_phone_number`: Optimized the OTP verification flow.
+*   `idx_devices_household_deleted`: High-performance scoping for device list and lookup.
+*   `idx_warranties_device_household_deleted`: Optimized the overlap validation query path.
+
+### 5. Verified Integrity
+Added **5 new integration test scenarios** to the suite, covering:
+*   Invalid enum value rejection (400).
+*   Correct filtering of soft-deleted records from lists and owner-checks.
+*   Rejection of overlapping warranty date ranges (400).
+
+---
+
+### Final Outcome ✅
+Sprint 3 and its subsequent Stability & Integrity Refactor successfully establish a high-trust, production-ready foundation for the Keepr data ecosystem. All 34 source files are checkstyle-compliant, 29/29 tests are confirmed green, and the architecture is securely prepared for **Sprint 4 (Invoice Ingestion & Extraction)**.
