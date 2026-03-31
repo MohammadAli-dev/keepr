@@ -1,8 +1,8 @@
 -------------------------------------------------------------------------------
-Test set: com.keepr.KeeprApplicationSmokeTest
+Test set: com.keepr.device.DeviceWarrantyIntegrationTest
 -------------------------------------------------------------------------------
-Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 0.040 s <<< FAILURE! -- in com.keepr.KeeprApplicationSmokeTest
-com.keepr.KeeprApplicationSmokeTest -- Time elapsed: 0.040 s <<< ERROR!
+Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 0.040 s <<< FAILURE! -- in com.keepr.device.DeviceWarrantyIntegrationTest
+com.keepr.device.DeviceWarrantyIntegrationTest -- Time elapsed: 0.040 s <<< ERROR!
 java.lang.IllegalStateException: Previous attempts to find a Docker environment failed. Will not retry. Please see logs and check configuration
 	at org.testcontainers.dockerclient.DockerClientProviderStrategy.getFirstValidStrategy(DockerClientProviderStrategy.java:229)
 	at org.testcontainers.DockerClientFactory.getOrInitializeStrategy(DockerClientFactory.java:154)
