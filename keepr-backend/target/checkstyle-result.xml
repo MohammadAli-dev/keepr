@@ -1,5 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <checkstyle version="10.21.2">
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/device/dto/DeviceResponse.java">
+</file>
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/device/dto/CreateDeviceRequest.java">
+</file>
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/device/repository/DeviceRepository.java">
+</file>
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/device/controller/DeviceController.java">
+</file>
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/device/model/DeviceCategory.java">
+</file>
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/device/model/Device.java">
+</file>
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/device/service/DeviceOwnershipService.java">
+</file>
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/device/service/DeviceService.java">
+</file>
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/warranty/dto/WarrantyResponse.java">
+</file>
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/warranty/dto/CreateWarrantyRequest.java">
+</file>
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/warranty/repository/WarrantyRepository.java">
+<error line="43" column="5" severity="warning" message="&apos;METHOD_DEF&apos; should be separated from previous line." source="com.puppycrawl.tools.checkstyle.checks.whitespace.EmptyLineSeparatorCheck"/>
+</file>
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/warranty/controller/WarrantyController.java">
+</file>
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/warranty/model/Warranty.java">
+</file>
+<file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/warranty/model/WarrantyType.java">
+</file>
 <file name="/Users/mohammadali/keepr/keepr-backend/src/main/java/com/keepr/warranty/service/WarrantyService.java">
 </file>
 </checkstyle>
