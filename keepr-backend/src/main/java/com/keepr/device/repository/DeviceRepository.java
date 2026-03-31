@@ -16,19 +16,20 @@ import org.springframework.stereotype.Repository;
 public interface DeviceRepository extends JpaRepository<Device, UUID> {
 
     /**
-     * Finds all devices belonging to a household, ordered by creation date descending.
+     * Finds all devices belonging to a household that are not deleted, ordered by creation date descending.
      *
      * @param householdId the household UUID
      * @return list of devices ordered newest-first
      */
-    List<Device> findAllByHouseholdIdOrderByCreatedAtDesc(UUID householdId);
+    List<Device> findAllByHouseholdIdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID householdId);
 
     /**
-     * Finds a device by its ID and household ID. Returns empty if not in this household.
+     * Finds a device by its ID and household ID that is not deleted.
+     * Returns empty if not in this household or already deleted.
      *
      * @param id          the device UUID
      * @param householdId the household UUID
-     * @return the device if found within the household
+     * @return the device if found within the household and active
      */
-    Optional<Device> findByIdAndHouseholdId(UUID id, UUID householdId);
+    Optional<Device> findByIdAndHouseholdIdAndDeletedAtIsNull(UUID id, UUID householdId);
 }

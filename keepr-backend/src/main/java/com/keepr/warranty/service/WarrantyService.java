@@ -1,15 +1,16 @@
 package com.keepr.warranty.service;
 
-import java.util.Set;
+import java.util.List;
 
 import com.keepr.common.exception.ErrorCode;
 import com.keepr.common.exception.KeeprException;
 import com.keepr.common.security.KeeprPrincipal;
 import com.keepr.device.model.Device;
-import com.keepr.device.repository.DeviceRepository;
+import com.keepr.device.service.DeviceOwnershipService;
 import com.keepr.warranty.dto.CreateWarrantyRequest;
 import com.keepr.warranty.dto.WarrantyResponse;
 import com.keepr.warranty.model.Warranty;
+import com.keepr.warranty.model.WarrantyType;
 import com.keepr.warranty.repository.WarrantyRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,10 +25,8 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class WarrantyService {
 
-    private static final Set<String> VALID_WARRANTY_TYPES = Set.of("MANUFACTURER", "EXTENDED", "AMC");
-
     private final WarrantyRepository warrantyRepository;
-    private final DeviceRepository deviceRepository;
+    private final DeviceOwnershipService deviceOwnershipService;
 
     /**
      * Creates a new warranty attached to a device within the authenticated user's household.
@@ -39,18 +38,34 @@ public class WarrantyService {
      * @throws KeeprException if validation fails or the device is not found
      */
     public WarrantyResponse createWarranty(CreateWarrantyRequest request, KeeprPrincipal principal) {
-        validateCreateRequest(request);
+        WarrantyType typeEnum = validateAndParseType(request.type());
+        validateDates(request);
 
-        // Fetch device by ID AND householdId — returns 404 for both not-found and cross-tenant
-        Device device = deviceRepository.findByIdAndHouseholdId(request.deviceId(), principal.householdId())
-                .orElseThrow(() -> new KeeprException(
-                        ErrorCode.NOT_FOUND,
-                        "Device not found: " + request.deviceId()));
+        // Fetch device via ownership service — returns 404 for both not-found and cross-tenant
+        Device device = deviceOwnershipService.getOwnedDevice(request.deviceId(), principal.householdId());
+
+        // Overlap validation
+        List<Warranty> existingWarranties = warrantyRepository.findAllByDeviceIdAndHouseholdIdAndDeletedAtIsNull(
+                device.getId(), principal.householdId());
+        
+        for (Warranty existing : existingWarranties) {
+            if (existing.getType() == typeEnum) {
+                if (existing.getStartDate() != null && existing.getEndDate() != null &&
+                        request.startDate() != null && request.endDate() != null) {
+                    if (!request.startDate().isAfter(existing.getEndDate()) &&
+                            !existing.getStartDate().isAfter(request.endDate())) {
+                        throw new KeeprException(
+                                ErrorCode.BAD_REQUEST,
+                                "Overlapping warranty exists for this device and type");
+                    }
+                }
+            }
+        }
 
         Warranty warranty = new Warranty();
         warranty.setDeviceId(device.getId());
         warranty.setHouseholdId(principal.householdId());
-        warranty.setType(request.type().toUpperCase());
+        warranty.setType(typeEnum);
         warranty.setStartDate(request.startDate());
         warranty.setEndDate(request.endDate());
 
@@ -61,16 +76,9 @@ public class WarrantyService {
         return toResponse(warranty);
     }
 
-    private void validateCreateRequest(CreateWarrantyRequest request) {
+    private void validateDates(CreateWarrantyRequest request) {
         if (request.deviceId() == null) {
             throw new KeeprException(ErrorCode.BAD_REQUEST, "Device ID is required");
-        }
-        if (request.type() == null || request.type().isBlank()) {
-            throw new KeeprException(ErrorCode.BAD_REQUEST, "Warranty type is required");
-        }
-        if (!VALID_WARRANTY_TYPES.contains(request.type().toUpperCase())) {
-            throw new KeeprException(ErrorCode.BAD_REQUEST,
-                    "Warranty type must be one of: MANUFACTURER, EXTENDED, AMC");
         }
         if (request.startDate() == null) {
             throw new KeeprException(ErrorCode.BAD_REQUEST, "Start date is required");
@@ -80,6 +88,18 @@ public class WarrantyService {
         }
         if (request.endDate().isBefore(request.startDate())) {
             throw new KeeprException(ErrorCode.BAD_REQUEST, "End date must be on or after start date");
+        }
+    }
+
+    private WarrantyType validateAndParseType(String typeStr) {
+        if (typeStr == null || typeStr.isBlank()) {
+            throw new KeeprException(ErrorCode.BAD_REQUEST, "Warranty type is required");
+        }
+        try {
+            return WarrantyType.valueOf(typeStr.toUpperCase().trim());
+        } catch (IllegalArgumentException e) {
+            throw new KeeprException(ErrorCode.BAD_REQUEST,
+                    "Warranty type must be one of: MANUFACTURER, EXTENDED, AMC");
         }
     }
 

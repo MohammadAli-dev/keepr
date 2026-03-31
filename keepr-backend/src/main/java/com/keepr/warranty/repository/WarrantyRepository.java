@@ -15,10 +15,20 @@ import org.springframework.stereotype.Repository;
 public interface WarrantyRepository extends JpaRepository<Warranty, UUID> {
 
     /**
-     * Finds all warranties belonging to a household, ordered by creation date descending.
+     * Finds all warranties belonging to a household that are not deleted, ordered by creation date descending.
      *
      * @param householdId the household UUID
      * @return list of warranties ordered newest-first
      */
-    List<Warranty> findAllByHouseholdIdOrderByCreatedAtDesc(UUID householdId);
+    List<Warranty> findAllByHouseholdIdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID householdId);
+
+    /**
+     * Finds all active warranties for a specific device within a household.
+     * Used for overlap validation.
+     *
+     * @param deviceId    the device UUID
+     * @param householdId the household UUID
+     * @return list of active warranties for the given device
+     */
+    List<Warranty> findAllByDeviceIdAndHouseholdIdAndDeletedAtIsNull(UUID deviceId, UUID householdId);
 }

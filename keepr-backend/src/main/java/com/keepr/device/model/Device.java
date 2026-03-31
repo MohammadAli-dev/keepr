@@ -2,10 +2,13 @@ package com.keepr.device.model;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
@@ -43,8 +46,9 @@ public class Device {
     @Column(name = "serial_number", length = 255)
     private String serialNumber;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 100)
-    private String category;
+    private DeviceCategory category;
 
     @Column(name = "purchase_date")
     private LocalDate purchaseDate;
@@ -54,6 +58,9 @@ public class Device {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
 
     /**
      * Sets defaults before initial persistence.

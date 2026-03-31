@@ -9,8 +9,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keepr.auth.model.AuthOtp;
 import com.keepr.auth.repository.AuthOtpRepository;
+import com.keepr.device.model.Device;
 import com.keepr.device.repository.DeviceRepository;
 import com.keepr.warranty.repository.WarrantyRepository;
+import com.keepr.warranty.model.Warranty;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -109,7 +111,7 @@ class DeviceWarrantyIntegrationTest {
                   "name": "LG AC",
                   "brand": "LG",
                   "model": "DualCool",
-                  "category": "APPLIANCE",
+                  "category": "AC",
                   "purchaseDate": "2024-06-01"
                 }
                 """;
@@ -123,7 +125,7 @@ class DeviceWarrantyIntegrationTest {
                 .andExpect(jsonPath("$.name").value("LG AC"))
                 .andExpect(jsonPath("$.brand").value("LG"))
                 .andExpect(jsonPath("$.model").value("DualCool"))
-                .andExpect(jsonPath("$.category").value("APPLIANCE"))
+                .andExpect(jsonPath("$.category").value("AC"))
                 .andExpect(jsonPath("$.purchaseDate").value("2024-06-01"));
     }
 
@@ -137,7 +139,7 @@ class DeviceWarrantyIntegrationTest {
                   "name": "Future Device",
                   "brand": "TestBrand",
                   "model": "TestModel",
-                  "category": "ELECTRONICS",
+                  "category": "OTHER",
                   "purchaseDate": "%s"
                 }
                 """, futureDate);
@@ -213,6 +215,28 @@ class DeviceWarrantyIntegrationTest {
         assertThat(devices.get(1).get("name").asText()).isEqualTo("Older Device");
     }
 
+    @Test
+    void listDevices_excludesSoftDeletedDevices() throws Exception {
+        String token = authenticateUser("9876540020");
+
+        // Create a device
+        UUID deviceId = createTestDevice(token, "To Be Deleted");
+
+        // Soft delete it directly via repository
+        Device device = deviceRepository.findById(deviceId).orElseThrow();
+        device.setDeletedAt(java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC));
+        deviceRepository.save(device);
+
+        // Fetch list, should be empty
+        MvcResult result = mockMvc.perform(get("/devices")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode devices = objectMapper.readTree(result.getResponse().getContentAsString());
+        assertThat(devices.size()).isEqualTo(0);
+    }
+
     // -------------------------------------------------------
     // Warranty Creation Tests
     // -------------------------------------------------------
@@ -263,6 +287,89 @@ class DeviceWarrantyIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void createWarranty_invalidType_returns400() throws Exception {
+        String token = authenticateUser("9876540021");
+        UUID deviceId = createTestDevice(token, "Invalid Type Device");
+
+        String body = String.format("""
+                {
+                  "deviceId": "%s",
+                  "type": "LIFETIME_MAGIC",
+                  "startDate": "2024-06-01",
+                  "endDate": "2025-06-01"
+                }
+                """, deviceId);
+
+        mockMvc.perform(post("/warranties")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void createWarranty_overlappingDates_returns400() throws Exception {
+        String token = authenticateUser("9876540022");
+        UUID deviceId = createTestDevice(token, "Overlap Test Device");
+
+        // Create first warranty Jan-Dec 2024
+        String body1 = String.format("""
+                {
+                  "deviceId": "%s",
+                  "type": "MANUFACTURER",
+                  "startDate": "2024-01-01",
+                  "endDate": "2024-12-31"
+                }
+                """, deviceId);
+        mockMvc.perform(post("/warranties")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body1))
+                .andExpect(status().isOk());
+
+        // Try to create overlapping warranty for the same type (June-Dec 2024)
+        String body2 = String.format("""
+                {
+                  "deviceId": "%s",
+                  "type": "MANUFACTURER",
+                  "startDate": "2024-06-01",
+                  "endDate": "2024-12-31"
+                }
+                """, deviceId);
+        mockMvc.perform(post("/warranties")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body2))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void createWarranty_onSoftDeletedDevice_returns404() throws Exception {
+        String token = authenticateUser("9876540023");
+        UUID deviceId = createTestDevice(token, "Deleted Device");
+
+        // Soft delete device
+        Device device = deviceRepository.findById(deviceId).orElseThrow();
+        device.setDeletedAt(java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC));
+        deviceRepository.save(device);
+
+        String body = String.format("""
+                {
+                  "deviceId": "%s",
+                  "type": "MANUFACTURER",
+                  "startDate": "2024-06-01",
+                  "endDate": "2025-06-01"
+                }
+                """, deviceId);
+
+        mockMvc.perform(post("/warranties")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -403,7 +510,7 @@ class DeviceWarrantyIntegrationTest {
                   "name": "%s",
                   "brand": "TestBrand",
                   "model": "TestModel",
-                  "category": "APPLIANCE",
+                  "category": "AC",
                   "purchaseDate": "2024-01-15"
                 }
                 """, deviceName);

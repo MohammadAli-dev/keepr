@@ -2,10 +2,13 @@ package com.keepr.warranty.model;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
@@ -36,8 +39,9 @@ public class Warranty {
     @Column(name = "invoice_id")
     private UUID invoiceId;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
-    private String type;
+    private WarrantyType type;
 
     @Column(length = 255)
     private String provider;
@@ -50,6 +54,9 @@ public class Warranty {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
 
     /**
      * Sets defaults before initial persistence.

@@ -2,6 +2,7 @@ package com.keepr.device.dto;
 
 import java.time.LocalDate;
 import java.util.UUID;
+import com.keepr.device.model.DeviceCategory;
 
 /**
  * Response body for device endpoints.
@@ -18,6 +19,6 @@ public record DeviceResponse(
         String name,
         String brand,
         String model,
-        String category,
+        DeviceCategory category,
         LocalDate purchaseDate) {
 }

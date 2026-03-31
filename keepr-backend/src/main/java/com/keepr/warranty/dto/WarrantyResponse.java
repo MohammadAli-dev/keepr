@@ -2,6 +2,7 @@ package com.keepr.warranty.dto;
 
 import java.time.LocalDate;
 import java.util.UUID;
+import com.keepr.warranty.model.WarrantyType;
 
 /**
  * Response body for warranty endpoints.
@@ -15,7 +16,7 @@ import java.util.UUID;
 public record WarrantyResponse(
         UUID warrantyId,
         UUID deviceId,
-        String type,
+        WarrantyType type,
         LocalDate startDate,
         LocalDate endDate) {
 }

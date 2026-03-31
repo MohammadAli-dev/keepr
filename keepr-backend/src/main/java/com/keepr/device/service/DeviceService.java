@@ -9,6 +9,7 @@ import com.keepr.common.security.KeeprPrincipal;
 import com.keepr.device.dto.CreateDeviceRequest;
 import com.keepr.device.dto.DeviceResponse;
 import com.keepr.device.model.Device;
+import com.keepr.device.model.DeviceCategory;
 import com.keepr.device.repository.DeviceRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ public class DeviceService {
      * @throws KeeprException if validation fails
      */
     public DeviceResponse createDevice(CreateDeviceRequest request, KeeprPrincipal principal) {
+        DeviceCategory categoryEnum = validateAndParseCategory(request.category());
         validateCreateRequest(request);
 
         Device device = new Device();
@@ -41,7 +43,7 @@ public class DeviceService {
         device.setName(request.name().trim());
         device.setBrand(request.brand());
         device.setModel(request.model());
-        device.setCategory(request.category().trim());
+        device.setCategory(categoryEnum);
         device.setPurchaseDate(request.purchaseDate());
 
         device = deviceRepository.save(device);
@@ -57,7 +59,7 @@ public class DeviceService {
      * @return list of device responses ordered by creation date descending
      */
     public List<DeviceResponse> listDevices(KeeprPrincipal principal) {
-        return deviceRepository.findAllByHouseholdIdOrderByCreatedAtDesc(principal.householdId())
+        return deviceRepository.findAllByHouseholdIdAndDeletedAtIsNullOrderByCreatedAtDesc(principal.householdId())
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -66,9 +68,6 @@ public class DeviceService {
     private void validateCreateRequest(CreateDeviceRequest request) {
         if (request.name() == null || request.name().isBlank()) {
             throw new KeeprException(ErrorCode.BAD_REQUEST, "Device name is required");
-        }
-        if (request.category() == null || request.category().isBlank()) {
-            throw new KeeprException(ErrorCode.BAD_REQUEST, "Device category is required");
         }
         if (request.purchaseDate() != null && request.purchaseDate().isAfter(LocalDate.now())) {
             throw new KeeprException(ErrorCode.BAD_REQUEST, "Purchase date cannot be in the future");
@@ -84,5 +83,16 @@ public class DeviceService {
                 device.getCategory(),
                 device.getPurchaseDate()
         );
+    }
+
+    private DeviceCategory validateAndParseCategory(String category) {
+        if (category == null || category.isBlank()) {
+            throw new KeeprException(ErrorCode.BAD_REQUEST, "Device category is required");
+        }
+        try {
+            return DeviceCategory.valueOf(category.toUpperCase().trim());
+        } catch (IllegalArgumentException e) {
+            throw new KeeprException(ErrorCode.BAD_REQUEST, "Invalid Category");
+        }
     }
 }
