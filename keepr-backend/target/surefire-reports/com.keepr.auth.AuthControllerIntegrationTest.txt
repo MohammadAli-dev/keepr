@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: com.keepr.auth.AuthControllerIntegrationTest
 -------------------------------------------------------------------------------
-Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.165 s -- in com.keepr.auth.AuthControllerIntegrationTest
+Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 8.961 s -- in com.keepr.auth.AuthControllerIntegrationTest
