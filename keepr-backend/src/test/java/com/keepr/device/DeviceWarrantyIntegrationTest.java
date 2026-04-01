@@ -7,8 +7,6 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.keepr.auth.model.AuthOtp;
-import com.keepr.auth.repository.AuthOtpRepository;
 import com.keepr.device.model.Device;
 import com.keepr.device.repository.DeviceRepository;
 import com.keepr.warranty.repository.WarrantyRepository;
@@ -18,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -69,7 +68,7 @@ class DeviceWarrantyIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Autowired
-    private AuthOtpRepository authOtpRepository;
+    private StringRedisTemplate stringRedisTemplate;
 
     @Autowired
     private DeviceRepository deviceRepository;
@@ -95,7 +94,6 @@ class DeviceWarrantyIntegrationTest {
     void cleanDb() {
         warrantyRepository.deleteAll();
         deviceRepository.deleteAll();
-        authOtpRepository.deleteAll();
     }
 
     // -------------------------------------------------------
@@ -480,16 +478,21 @@ class DeviceWarrantyIntegrationTest {
      * @return the JWT access token
      */
     private String authenticateUser(String phone) throws Exception {
-        AuthOtp otp = new AuthOtp();
-        otp.setPhoneNumber(phone);
-        otp.setOtpCode("123456");
-        otp.setExpiresAt(Instant.now().plus(10, ChronoUnit.MINUTES));
-        authOtpRepository.save(otp);
+        // Send OTP
+        mockMvc.perform(post("/auth/send-otp")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new com.keepr.auth.dto.SendOtpRequest(phone))))
+                .andExpect(status().isOk());
+
+        // Get OTP from Redis (Sprint 2 implementation)
+        String code = stringRedisTemplate.opsForValue().get("otp:" + phone);
+        assertThat(code).isNotNull();
 
         MvcResult result = mockMvc.perform(post("/auth/verify-otp")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new com.keepr.auth.dto.VerifyOtpRequest(phone, "123456"))))
+                                new com.keepr.auth.dto.VerifyOtpRequest(phone, code))))
                 .andExpect(status().isOk())
                 .andReturn();
 

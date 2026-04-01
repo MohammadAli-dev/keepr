@@ -51,11 +51,13 @@ public class DeviceService {
         DeviceCategory categoryEnum = validateAndParseCategory(request.category());
         validateCreateRequest(request);
 
-        String normalizedName = request.name().trim();
+        String normalizedName = normalize(request.name());
+        String normalizedBrand = normalize(request.brand());
+        String normalizedModel = normalize(request.model());
 
         // Idempotency check: reuse existing active device with same identifiers
         return deviceRepository.findByNameAndBrandAndModelAndHouseholdIdAndDeletedAtIsNull(
-                normalizedName, request.brand(), request.model(), householdId)
+                normalizedName, normalizedBrand, normalizedModel, householdId)
                 .map(device -> {
                     log.info("Returning existing device for idempotency: id={}", device.getId());
                     return toResponse(device);
@@ -64,8 +66,8 @@ public class DeviceService {
                     Device device = new Device();
                     device.setHouseholdId(householdId);
                     device.setName(normalizedName);
-                    device.setBrand(request.brand());
-                    device.setModel(request.model());
+                    device.setBrand(normalizedBrand);
+                    device.setModel(normalizedModel);
                     device.setCategory(categoryEnum);
                     device.setPurchaseDate(request.purchaseDate());
 
@@ -73,6 +75,10 @@ public class DeviceService {
                     log.info("Device created: id={}, householdId={}", device.getId(), device.getHouseholdId());
                     return toResponse(device);
                 });
+    }
+
+    private String normalize(String value) {
+        return value == null ? null : value.trim();
     }
 
     /**

@@ -8,8 +8,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -18,9 +18,11 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "extraction_jobs")
-@Data
-@NoArgsConstructor
+@Getter
+@Setter
 public class ExtractionJob {
+
+    public ExtractionJob() {}
 
     @Id
     private UUID id;

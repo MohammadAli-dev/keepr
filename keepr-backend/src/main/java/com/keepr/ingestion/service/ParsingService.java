@@ -4,7 +4,6 @@ import java.time.LocalDate;
 
 import com.keepr.device.dto.CreateDeviceRequest;
 import com.keepr.warranty.dto.CreateWarrantyRequest;
-import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -18,11 +17,10 @@ public class ParsingService {
     /**
      * Data object for holding extraction results.
      */
-    @Value
-    public static class ExtractionResult {
-        CreateDeviceRequest deviceRequest;
-        CreateWarrantyRequest warrantyRequest;
-    }
+    public record ExtractionResult(
+            CreateDeviceRequest deviceRequest,
+            CreateWarrantyRequest warrantyRequest
+    ) {}
 
     /**
      * Parses OCR text into stubbed device and warranty data.

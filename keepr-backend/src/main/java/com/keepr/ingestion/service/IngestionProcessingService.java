@@ -33,8 +33,7 @@ public class IngestionProcessingService {
     private final ParsingService parsingService;
     private final DeviceService deviceService;
     private final WarrantyService warrantyService;
-
-    private static final int MAX_RETRIES = 3;
+    private final IngestionFailureService ingestionFailureService;
 
     /**
      * Processes a single extraction job asynchronously.
@@ -63,14 +62,14 @@ public class IngestionProcessingService {
 
             // 4. Persistence (Using internal service methods)
             DeviceResponse deviceRes = deviceService.createDeviceInternal(
-                    result.getDeviceRequest(), 
+                    result.deviceRequest(), 
                     job.getHouseholdId()
             );
 
-            if (result.getWarrantyRequest() != null) {
+            if (result.warrantyRequest() != null) {
                 // Link warranty to the newly created/existing device
                 CreateWarrantyRequest warrantyReq = updateWarrantyWithDeviceId(
-                        result.getWarrantyRequest(), 
+                        result.warrantyRequest(), 
                         deviceRes.deviceId()
                 );
                 warrantyService.createWarrantyInternal(warrantyReq, job.getHouseholdId());
@@ -79,30 +78,17 @@ public class IngestionProcessingService {
             // 5. Finalize
             job.setStatus(JobStatus.COMPLETED);
             job.setErrorMessage(null);
+            job.setUpdatedAt(OffsetDateTime.now());
             extractionJobRepository.save(job);
             log.info("Job completed successfully: jobId={}", job.getId());
 
         } catch (Exception e) {
             log.error("Job processing failed: jobId={}", job.getId(), e);
-            handleFailure(job, e.getMessage());
+            ingestionFailureService.handleFailure(job, e);
+            throw e;
         }
     }
 
-    private void handleFailure(ExtractionJob job, String message) {
-        job.setRetryCount(job.getRetryCount() + 1);
-        job.setErrorMessage(message);
-        job.setUpdatedAt(OffsetDateTime.now());
-
-        if (job.getRetryCount() >= MAX_RETRIES) {
-            job.setStatus(JobStatus.FAILED);
-            log.error("Job reached max retries and FAILED: jobId={}", job.getId());
-        } else {
-            job.setStatus(JobStatus.PENDING);
-            log.warn("Job marked for retry (count={}): jobId={}", job.getRetryCount(), job.getId());
-        }
-        
-        extractionJobRepository.save(job);
-    }
 
     private CreateWarrantyRequest updateWarrantyWithDeviceId(CreateWarrantyRequest original, UUID deviceId) {
         return new CreateWarrantyRequest(

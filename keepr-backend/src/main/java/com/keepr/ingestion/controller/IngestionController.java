@@ -1,9 +1,6 @@
 package com.keepr.ingestion.controller;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 
 import com.keepr.common.exception.ErrorCode;
@@ -12,15 +9,13 @@ import com.keepr.common.security.KeeprPrincipal;
 import com.keepr.ingestion.dto.JobStatusResponse;
 import com.keepr.ingestion.dto.UploadDocumentResponse;
 import com.keepr.ingestion.model.ExtractionJob;
-import com.keepr.ingestion.model.JobStatus;
-import com.keepr.ingestion.model.RawDocument;
 import com.keepr.ingestion.repository.ExtractionJobRepository;
-import com.keepr.ingestion.repository.RawDocumentRepository;
+import com.keepr.ingestion.service.FileStorageService;
+import com.keepr.ingestion.service.IngestionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -38,10 +33,9 @@ import org.springframework.web.multipart.MultipartFile;
 @Slf4j
 public class IngestionController {
 
-    private final RawDocumentRepository rawDocumentRepository;
+    private final IngestionService ingestionService;
+    private final FileStorageService fileStorageService;
     private final ExtractionJobRepository extractionJobRepository;
-
-    private static final String UPLOAD_DIR = "/tmp/keepr-uploads";
 
     /**
      * Uploads a document for asynchronous processing.
@@ -51,41 +45,39 @@ public class IngestionController {
      * @return job tracking details
      */
     @PostMapping("/upload")
-    @Transactional
     public ResponseEntity<UploadDocumentResponse> uploadDocument(
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal KeeprPrincipal principal) {
 
         validateFile(file);
 
-        String uniqueFileName = UUID.randomUUID() + "-" + file.getOriginalFilename();
-        Path targetPath = Path.of(UPLOAD_DIR).resolve(uniqueFileName);
+        // Phase 1: Physical Side-effect (Outside Transaction)
+        Path targetPath = fileStorageService.store(file);
 
         try {
-            Files.createDirectories(Path.of(UPLOAD_DIR));
-            Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException e) {
-            log.error("Failed to save uploaded file: {}", uniqueFileName, e);
-            throw new KeeprException(ErrorCode.INTERNAL_ERROR, "Failed to save file");
+            // Phase 2: Transactional Save
+            ExtractionJob job = ingestionService.saveMetadata(
+                    targetPath,
+                    principal.householdId(),
+                    principal.userId(),
+                    file.getContentType()
+            );
+
+            log.info("Document uploaded & job created: jobId={}, householdId={}", 
+                    job.getId(), principal.householdId());
+
+            return ResponseEntity.ok(new UploadDocumentResponse(
+                    job.getRawDocumentId(), 
+                    job.getId(), 
+                    job.getStatus())
+            );
+
+        } catch (Exception e) {
+            // Rollback hook: cleanup orphaned file
+            log.error("DB Save failed for upload, cleaning up file: {}", targetPath, e);
+            fileStorageService.delete(targetPath.toString());
+            throw e;
         }
-
-        RawDocument doc = new RawDocument();
-        doc.setHouseholdId(principal.householdId());
-        doc.setFileName(file.getOriginalFilename());
-        doc.setFileUrl(targetPath.toString());
-        doc.setFileType(file.getContentType());
-        doc.setUploadedBy(principal.userId());
-        doc = rawDocumentRepository.save(doc);
-
-        ExtractionJob job = new ExtractionJob();
-        job.setHouseholdId(principal.householdId());
-        job.setRawDocumentId(doc.getId());
-        job.setStatus(JobStatus.PENDING);
-        job = extractionJobRepository.save(job);
-
-        log.info("Document uploaded & job created: jobId={}, householdId={}", job.getId(), principal.householdId());
-
-        return ResponseEntity.ok(new UploadDocumentResponse(doc.getId(), job.getId(), job.getStatus()));
     }
 
     /**

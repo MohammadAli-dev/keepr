@@ -46,8 +46,14 @@ public class ExtractionWorker {
         log.info("Picked up {} jobs for processing", jobs.size());
 
         for (ExtractionJob job : jobs) {
-            // Processing happens in its own REQUIRES_NEW transaction for isolation
-            ingestionProcessingService.processJob(job);
+            try {
+                // Processing happens in its own REQUIRES_NEW transaction for isolation
+                ingestionProcessingService.processJob(job);
+            } catch (Exception e) {
+                log.error("Failed to process extraction job ID={}: {}", job.getId(), e.getMessage(), e);
+                // Isolation: do not re-throw, continue with the next job in the batch.
+                // IngestionFailureService handled the persistent status update.
+            }
         }
     }
 

@@ -5,8 +5,6 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.keepr.auth.model.AuthOtp;
-import com.keepr.auth.repository.AuthOtpRepository;
 import com.keepr.device.repository.DeviceRepository;
 import com.keepr.ingestion.repository.RawDocumentRepository;
 import com.keepr.ingestion.repository.ExtractionJobRepository;
@@ -17,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
@@ -69,7 +68,7 @@ class IngestionIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Autowired
-    private AuthOtpRepository authOtpRepository;
+    private StringRedisTemplate stringRedisTemplate;
 
     @Autowired
     private DeviceRepository deviceRepository;
@@ -101,7 +100,6 @@ class IngestionIntegrationTest {
         rawDocumentRepository.deleteAll();
         warrantyRepository.deleteAll();
         deviceRepository.deleteAll();
-        authOtpRepository.deleteAll();
     }
 
     @Test
@@ -210,10 +208,11 @@ class IngestionIntegrationTest {
                 .content("{\"phoneNumber\": \"" + phoneNumber + "\"}"))
                 .andExpect(status().isOk());
 
-        AuthOtp otpRecord = authOtpRepository.findAll().get(0);
-        String code = otpRecord.getOtpCode();
+        // Step 2: Get OTP from Redis (Sprint 2 implementation)
+        String code = stringRedisTemplate.opsForValue().get("otp:" + phoneNumber);
+        assertThat(code).isNotNull();
 
-        // Step 2: Verify OTP
+        // Step 3: Verify OTP
         MvcResult verifyResult = mockMvc.perform(post("/api/v1/auth/verify-otp")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(String.format("{\"phoneNumber\": \"%s\", \"otpCode\": \"%s\"}", phoneNumber, code)))
