@@ -2,6 +2,7 @@ package com.keepr.device.service;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 import com.keepr.common.exception.ErrorCode;
 import com.keepr.common.exception.KeeprException;
@@ -35,21 +36,43 @@ public class DeviceService {
      * @throws KeeprException if validation fails
      */
     public DeviceResponse createDevice(CreateDeviceRequest request, KeeprPrincipal principal) {
+        return createDeviceInternal(request, principal.householdId());
+    }
+
+    /**
+     * Internal method to create a device, used by both the API and background workers.
+     * Implements idempotency to prevent duplicate creation of logically identical devices.
+     *
+     * @param request     the device creation request
+     * @param householdId the destination household UUID
+     * @return the device response
+     */
+    public DeviceResponse createDeviceInternal(CreateDeviceRequest request, UUID householdId) {
         DeviceCategory categoryEnum = validateAndParseCategory(request.category());
         validateCreateRequest(request);
 
-        Device device = new Device();
-        device.setHouseholdId(principal.householdId());
-        device.setName(request.name().trim());
-        device.setBrand(request.brand());
-        device.setModel(request.model());
-        device.setCategory(categoryEnum);
-        device.setPurchaseDate(request.purchaseDate());
+        String normalizedName = request.name().trim();
 
-        device = deviceRepository.save(device);
-        log.info("Device created: id={}, householdId={}", device.getId(), device.getHouseholdId());
+        // Idempotency check: reuse existing active device with same identifiers
+        return deviceRepository.findByNameAndBrandAndModelAndHouseholdIdAndDeletedAtIsNull(
+                normalizedName, request.brand(), request.model(), householdId)
+                .map(device -> {
+                    log.info("Returning existing device for idempotency: id={}", device.getId());
+                    return toResponse(device);
+                })
+                .orElseGet(() -> {
+                    Device device = new Device();
+                    device.setHouseholdId(householdId);
+                    device.setName(normalizedName);
+                    device.setBrand(request.brand());
+                    device.setModel(request.model());
+                    device.setCategory(categoryEnum);
+                    device.setPurchaseDate(request.purchaseDate());
 
-        return toResponse(device);
+                    device = deviceRepository.save(device);
+                    log.info("Device created: id={}, householdId={}", device.getId(), device.getHouseholdId());
+                    return toResponse(device);
+                });
     }
 
     /**

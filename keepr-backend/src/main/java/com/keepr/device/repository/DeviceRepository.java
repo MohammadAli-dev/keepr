@@ -32,4 +32,17 @@ public interface DeviceRepository extends JpaRepository<Device, UUID> {
      * @return the device if found within the household and active
      */
     Optional<Device> findByIdAndHouseholdIdAndDeletedAtIsNull(UUID id, UUID householdId);
+
+    /**
+     * Finds an active device by its unique identifying fields within a household.
+     * Used to prevent duplicate device creation in async ingestion workflows.
+     *
+     * @param name        the device name
+     * @param brand       the device brand
+     * @param model       the device model
+     * @param householdId the household UUID
+     * @return the active device if found
+     */
+    Optional<Device> findByNameAndBrandAndModelAndHouseholdIdAndDeletedAtIsNull(
+            String name, String brand, String model, UUID householdId);
 }
