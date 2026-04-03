@@ -5,6 +5,8 @@ import java.util.UUID;
 
 import com.keepr.device.dto.DeviceResponse;
 import com.keepr.device.service.DeviceService;
+import com.keepr.common.exception.ErrorCode;
+import com.keepr.common.exception.KeeprException;
 import com.keepr.ingestion.model.ExtractionJob;
 import com.keepr.ingestion.model.JobStatus;
 import com.keepr.ingestion.model.RawDocument;
@@ -53,8 +55,9 @@ public class IngestionProcessingService {
             extractionJobRepository.saveAndFlush(job);
 
             // 2. Load RawDocument
-            RawDocument doc = rawDocumentRepository.findById(job.getRawDocumentId())
-                    .orElseThrow(() -> new RuntimeException("RawDocument not found: " + job.getRawDocumentId()));
+            RawDocument doc = rawDocumentRepository.findByIdAndHouseholdId(job.getRawDocumentId(), job.getHouseholdId())
+                    .orElseThrow(() -> new KeeprException(ErrorCode.NOT_FOUND, 
+                            "RawDocument not found: " + job.getRawDocumentId()));
 
             // 3. Extraction Flow (Stubs)
             String text = ocrService.extractText(doc.getFileUrl());

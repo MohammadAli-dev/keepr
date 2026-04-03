@@ -3,28 +3,63 @@ package com.keepr.ingestion.service;
 import java.nio.file.Path;
 import java.util.UUID;
 
+import com.keepr.common.security.KeeprPrincipal;
 import com.keepr.ingestion.model.ExtractionJob;
 import com.keepr.ingestion.model.JobStatus;
 import com.keepr.ingestion.model.RawDocument;
 import com.keepr.ingestion.repository.ExtractionJobRepository;
 import com.keepr.ingestion.repository.RawDocumentRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
- * Service for transactional database operations inside the ingestion flow.
- * Coordinates entity creation for raw documents and extraction jobs.
+ * Service orchestrating the document ingestion flow.
+ * Coordinates file storage and multi-step database metadata creation.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class IngestionService {
 
     private final RawDocumentRepository rawDocumentRepository;
     private final ExtractionJobRepository extractionJobRepository;
+    private final FileStorageService fileStorageService;
+
+    /**
+     * Orchestrates the complete document upload flow.
+     * 1. Physical storage (outside main transaction)
+     * 2. Transactional metadata save
+     * 3. Rollback cleanup on failure
+     *
+     * @param file      multipart object from controller
+     * @param principal authenticated user principal
+     * @return tracking details of the new extraction job
+     */
+    public ExtractionJob uploadDocument(MultipartFile file, KeeprPrincipal principal) {
+        // Step 1: Storage (Outside Transaction)
+        Path targetPath = fileStorageService.store(file);
+
+        try {
+            // Step 2: Database Metadata (Transactional)
+            return saveMetadata(targetPath, principal.householdId(), principal.userId(), file.getContentType());
+        } catch (Exception e) {
+            // Step 3: Cleanup Hook
+            log.error("Metadata save failed, cleaning up orphaned file: {}", targetPath, e);
+            try {
+                fileStorageService.delete(targetPath.toString());
+            } catch (Exception deleteEx) {
+                e.addSuppressed(deleteEx);
+            }
+            throw e;
+        }
+    }
 
     /**
      * Saves record metadata for a newly uploaded document and its job.
+     * Internal transactional atomic step.
      *
      * @param targetPath   physical location on disk
      * @param householdId  associated household ID

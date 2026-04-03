@@ -14,7 +14,11 @@ import org.springframework.stereotype.Repository;
 public interface RawDocumentRepository extends JpaRepository<RawDocument, UUID> {
 
     /**
-     * Secures findById by scoping it to the household.
+     * Finds a document by its ID and household ID for multi-tenancy enforcement.
+     *
+     * @param id          the document UUID
+     * @param householdId the household UUID
+     * @return the document if found within the household context
      */
     Optional<RawDocument> findByIdAndHouseholdId(UUID id, UUID householdId);
 

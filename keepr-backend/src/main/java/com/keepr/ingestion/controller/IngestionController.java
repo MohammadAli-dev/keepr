@@ -1,6 +1,5 @@
 package com.keepr.ingestion.controller;
 
-import java.nio.file.Path;
 import java.util.UUID;
 
 import com.keepr.common.exception.ErrorCode;
@@ -10,7 +9,6 @@ import com.keepr.ingestion.dto.JobStatusResponse;
 import com.keepr.ingestion.dto.UploadDocumentResponse;
 import com.keepr.ingestion.model.ExtractionJob;
 import com.keepr.ingestion.repository.ExtractionJobRepository;
-import com.keepr.ingestion.service.FileStorageService;
 import com.keepr.ingestion.service.IngestionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +32,6 @@ import org.springframework.web.multipart.MultipartFile;
 public class IngestionController {
 
     private final IngestionService ingestionService;
-    private final FileStorageService fileStorageService;
     private final ExtractionJobRepository extractionJobRepository;
 
     /**
@@ -51,37 +48,16 @@ public class IngestionController {
 
         validateFile(file);
 
-        // Phase 1: Physical Side-effect (Outside Transaction)
-        Path targetPath = fileStorageService.store(file);
+        ExtractionJob job = ingestionService.uploadDocument(file, principal);
 
-        try {
-            // Phase 2: Transactional Save
-            ExtractionJob job = ingestionService.saveMetadata(
-                    targetPath,
-                    principal.householdId(),
-                    principal.userId(),
-                    file.getContentType()
-            );
+        log.info("Document uploaded & job created: jobId={}, householdId={}", 
+                job.getId(), principal.householdId());
 
-            log.info("Document uploaded & job created: jobId={}, householdId={}", 
-                    job.getId(), principal.householdId());
-
-            return ResponseEntity.ok(new UploadDocumentResponse(
-                    job.getRawDocumentId(), 
-                    job.getId(), 
-                    job.getStatus())
-            );
-
-        } catch (Exception e) {
-            // Rollback hook: cleanup orphaned file
-            log.error("DB Save failed for upload, cleaning up file: {}", targetPath, e);
-            try {
-                fileStorageService.delete(targetPath.toString());
-            } catch (Exception deleteEx) {
-                e.addSuppressed(deleteEx);
-            }
-            throw e;
-        }
+        return ResponseEntity.ok(new UploadDocumentResponse(
+                job.getRawDocumentId(), 
+                job.getId(), 
+                job.getStatus())
+        );
     }
 
     /**
