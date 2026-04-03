@@ -75,7 +75,11 @@ public class IngestionController {
         } catch (Exception e) {
             // Rollback hook: cleanup orphaned file
             log.error("DB Save failed for upload, cleaning up file: {}", targetPath, e);
-            fileStorageService.delete(targetPath.toString());
+            try {
+                fileStorageService.delete(targetPath.toString());
+            } catch (Exception deleteEx) {
+                e.addSuppressed(deleteEx);
+            }
             throw e;
         }
     }

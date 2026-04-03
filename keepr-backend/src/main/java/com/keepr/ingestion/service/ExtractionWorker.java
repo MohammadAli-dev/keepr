@@ -34,9 +34,11 @@ public class ExtractionWorker {
     public void pollAndProcess() {
         log.info("Polling for extraction jobs...");
         
+        OffsetDateTime now = OffsetDateTime.now();
         List<ExtractionJob> jobs = extractionJobRepository.findPendingJobsForUpdate(
                 BATCH_SIZE, 
-                OffsetDateTime.now()
+                now.minusSeconds(30),
+                now.minusMinutes(2)
         );
 
         if (jobs.isEmpty()) {

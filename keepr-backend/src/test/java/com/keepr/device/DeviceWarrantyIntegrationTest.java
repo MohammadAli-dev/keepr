@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -67,8 +66,9 @@ class DeviceWarrantyIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+
     @Autowired
-    private StringRedisTemplate stringRedisTemplate;
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Autowired
     private DeviceRepository deviceRepository;
@@ -485,9 +485,10 @@ class DeviceWarrantyIntegrationTest {
                                 new com.keepr.auth.dto.SendOtpRequest(phone))))
                 .andExpect(status().isOk());
 
-        // Get OTP from Redis (Sprint 2 implementation)
-        String code = stringRedisTemplate.opsForValue().get("otp:" + phone);
-        assertThat(code).isNotNull();
+        // Get OTP from DB using JdbcTemplate since the backend still uses Postgres for OTPs
+        String code = jdbcTemplate.queryForObject(
+                "SELECT otp_code FROM auth_otp WHERE phone_number = ? ORDER BY expires_at DESC LIMIT 1",
+                String.class, phone);
 
         MvcResult result = mockMvc.perform(post("/auth/verify-otp")
                         .contentType(MediaType.APPLICATION_JSON)

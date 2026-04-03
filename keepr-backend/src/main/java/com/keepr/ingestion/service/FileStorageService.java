@@ -52,10 +52,16 @@ public class FileStorageService {
      * @param filePath path to the file
      */
     public void delete(String filePath) {
+        Path uploadDirPath = Path.of(uploadDir).toAbsolutePath().normalize();
+        Path resolved = uploadDirPath.resolve(filePath).normalize();
+        if (!resolved.startsWith(uploadDirPath)) {
+            throw new SecurityException("Invalid file path");
+        }
         try {
-            Files.deleteIfExists(Path.of(filePath));
+            Files.deleteIfExists(resolved);
         } catch (IOException e) {
-            log.error("Failed to delete file: {}", filePath, e);
+            log.error("Failed to delete file {}", resolved, e);
+            throw new KeeprException(ErrorCode.INTERNAL_ERROR, "File deletion failed");
         }
     }
 

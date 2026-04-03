@@ -89,7 +89,6 @@ public class IngestionProcessingService {
         }
     }
 
-
     private CreateWarrantyRequest updateWarrantyWithDeviceId(CreateWarrantyRequest original, UUID deviceId) {
         return new CreateWarrantyRequest(
                 deviceId,

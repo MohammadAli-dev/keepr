@@ -25,8 +25,9 @@ public interface RawDocumentRepository extends JpaRepository<RawDocument, UUID> 
 
     /**
      * Override to mark as unsafe.
+     * @deprecated Use {@link #findByIdAndHouseholdId(UUID, UUID)} instead.
      */
-    @Deprecated(since = "use findByIdAndHouseholdId instead", forRemoval = false)
+    @Deprecated(since = "1.0", forRemoval = false)
     @Override
-    Optional<RawDocument> findById(UUID id);
+    Optional<RawDocument> findById(@org.springframework.lang.NonNull UUID id);
 }

@@ -19,6 +19,9 @@ import java.util.UUID;
 @Setter
 public class RawDocument {
 
+    /**
+     * Default constructor for JPA.
+     */
     public RawDocument() {}
 
     @Id

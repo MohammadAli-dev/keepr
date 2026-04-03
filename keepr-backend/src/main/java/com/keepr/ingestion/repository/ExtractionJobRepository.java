@@ -31,14 +31,19 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
             AND deleted_at IS NULL
             AND (
                 (retry_count = 0) OR 
-                (retry_count = 1 AND updated_at < :now - interval '30 seconds') OR 
-                (retry_count = 2 AND updated_at < :now - interval '2 minutes')
+                (retry_count = 1 AND updated_at < :retry1Threshold) OR 
+                (retry_count = 2 AND updated_at < :retry2Threshold)
             )
             ORDER BY created_at ASC 
             LIMIT :limit 
             FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
-    List<ExtractionJob> findPendingJobsForUpdate(@Param("limit") int limit, @Param("now") OffsetDateTime now);
+    List<ExtractionJob> findPendingJobsForUpdate(
+            @Param("limit") int limit, 
+            @Param("retry1Threshold") OffsetDateTime retry1Threshold,
+            @Param("retry2Threshold") OffsetDateTime retry2Threshold);
+
+    int MAX_RETRIES = 3;
 
     /**
      * Resets stale jobs stuck in PROCESSING to PENDING status to allow re-pickup.
@@ -50,12 +55,12 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
     @Modifying
     @Query("UPDATE ExtractionJob j " +
             "SET j.status = CASE " +
-            "  WHEN j.retryCount + 1 >= 3 THEN com.keepr.ingestion.model.JobStatus.FAILED " +
+            "  WHEN j.retryCount + 1 >= " + MAX_RETRIES + " THEN com.keepr.ingestion.model.JobStatus.FAILED " +
             "  ELSE com.keepr.ingestion.model.JobStatus.PENDING " +
             "END, " +
             "j.retryCount = j.retryCount + 1, " +
             "j.updatedAt = :now " +
-            "WHERE j.status = 'PROCESSING' AND j.updatedAt < :threshold")
+            "WHERE j.status = com.keepr.ingestion.model.JobStatus.PROCESSING AND j.updatedAt < :threshold")
     int resetStaleJobs(@Param("threshold") OffsetDateTime threshold, @Param("now") OffsetDateTime now);
 
     /**

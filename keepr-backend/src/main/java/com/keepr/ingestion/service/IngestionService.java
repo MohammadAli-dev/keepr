@@ -34,9 +34,26 @@ public class IngestionService {
      */
     @Transactional
     public ExtractionJob saveMetadata(Path targetPath, UUID householdId, UUID uploadedBy, String contentType) {
+        if (targetPath == null) {
+            throw new IllegalArgumentException("targetPath cannot be null");
+        }
+        if (householdId == null) {
+            throw new IllegalArgumentException("householdId cannot be null");
+        }
+        if (uploadedBy == null) {
+            throw new IllegalArgumentException("uploadedBy cannot be null");
+        }
+        if (contentType == null) {
+            throw new IllegalArgumentException("contentType cannot be null");
+        }
+
+        String fileName = targetPath.getFileName() != null 
+                ? targetPath.getFileName().toString() 
+                : targetPath.toString();
+
         RawDocument doc = new RawDocument();
         doc.setHouseholdId(householdId);
-        doc.setFileName(targetPath.getFileName().toString());
+        doc.setFileName(fileName);
         doc.setFileUrl(targetPath.toString());
         doc.setFileType(contentType);
         doc.setUploadedBy(uploadedBy);

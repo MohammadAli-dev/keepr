@@ -11,6 +11,8 @@ CREATE TABLE raw_documents (
     deleted_at TIMESTAMP WITH TIME ZONE
 );
 
+DROP TABLE IF EXISTS extraction_jobs CASCADE;
+
 CREATE TABLE extraction_jobs (
     id UUID PRIMARY KEY,
     household_id UUID NOT NULL,

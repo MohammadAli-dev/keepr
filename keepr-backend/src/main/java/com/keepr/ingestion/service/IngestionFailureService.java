@@ -1,11 +1,9 @@
 package com.keepr.ingestion.service;
 
 import java.time.OffsetDateTime;
-import java.util.UUID;
 
 import com.keepr.ingestion.model.ExtractionJob;
 import com.keepr.ingestion.model.JobStatus;
-import com.keepr.ingestion.model.RawDocument;
 import com.keepr.ingestion.repository.ExtractionJobRepository;
 import com.keepr.ingestion.repository.RawDocumentRepository;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +30,7 @@ public class IngestionFailureService {
      * Handles job failure by incrementing retry count and updating status.
      * Runs in REQUIRES_NEW to ensure job state is persisted even if the main transaction rolls back.
      *
-     * @param job those job that failed
+     * @param job the job that failed
      * @param e   the exception that caused the failure
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -61,7 +59,8 @@ public class IngestionFailureService {
         try {
             rawDocumentRepository.findByIdAndHouseholdId(job.getRawDocumentId(), job.getHouseholdId())
                     .ifPresent(doc -> {
-                        log.info("Cleaning up physical file for failed job: jobId={}, path={}", job.getId(), doc.getFileUrl());
+                        log.info("Cleaning up physical file for failed job: jobId={}, path={}", 
+                                job.getId(), doc.getFileUrl());
                         fileStorageService.delete(doc.getFileUrl());
                     });
         } catch (Exception ex) {

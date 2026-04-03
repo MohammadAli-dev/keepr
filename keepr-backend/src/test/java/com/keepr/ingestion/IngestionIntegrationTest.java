@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
@@ -68,7 +67,7 @@ class IngestionIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Autowired
-    private StringRedisTemplate stringRedisTemplate;
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Autowired
     private DeviceRepository deviceRepository;
@@ -203,23 +202,25 @@ class IngestionIntegrationTest {
 
     private String obtainJwt(String phoneNumber) throws Exception {
         // Step 1: Send OTP
-        mockMvc.perform(post("/api/v1/auth/send-otp")
+        mockMvc.perform(post("/auth/send-otp")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"phoneNumber\": \"" + phoneNumber + "\"}"))
                 .andExpect(status().isOk());
 
-        // Step 2: Get OTP from Redis (Sprint 2 implementation)
-        String code = stringRedisTemplate.opsForValue().get("otp:" + phoneNumber);
+        // Get OTP from DB using JdbcTemplate since the backend still uses Postgres for OTPs
+        String code = jdbcTemplate.queryForObject(
+                "SELECT otp_code FROM auth_otp WHERE phone_number = ? ORDER BY expires_at DESC LIMIT 1",
+                String.class, phoneNumber);
         assertThat(code).isNotNull();
 
         // Step 3: Verify OTP
-        MvcResult verifyResult = mockMvc.perform(post("/api/v1/auth/verify-otp")
+        MvcResult verifyResult = mockMvc.perform(post("/auth/verify-otp")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(String.format("{\"phoneNumber\": \"%s\", \"otpCode\": \"%s\"}", phoneNumber, code)))
                 .andExpect(status().isOk())
                 .andReturn();
 
         JsonNode responseNode = objectMapper.readTree(verifyResult.getResponse().getContentAsString());
-        return responseNode.get("token").asText();
+        return responseNode.get("accessToken").asText();
     }
 }
