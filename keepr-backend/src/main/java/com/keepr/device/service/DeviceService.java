@@ -83,13 +83,18 @@ public class DeviceService {
                         return deviceRepository.findByNameAndBrandAndModelAndHouseholdIdAndDeletedAtIsNull(
                                 name, brand, model, householdId)
                                 .map(this::toResponse)
-                                .orElseThrow(() -> e); // Rethrow if still not found (unexpected)
+                                .orElseThrow(() -> new KeeprException(ErrorCode.INTERNAL_ERROR, 
+                                        "Device creation failed after collision retry: " + name));
                     }
                 });
     }
 
     private String normalize(String value) {
-        return value == null ? null : value.trim().toLowerCase();
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim().toLowerCase();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     /**

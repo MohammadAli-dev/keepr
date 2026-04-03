@@ -46,7 +46,8 @@ public class IngestionProcessingService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void processJob(ExtractionJob job) {
-        log.info("Processing job: jobId={}, householdId={}", job.getId(), job.getHouseholdId());
+        log.info("Processing job id={} retryCount={} householdId={}", 
+                job.getId(), job.getRetryCount(), job.getHouseholdId());
         
         try {
             // 1. Transition state
