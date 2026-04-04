@@ -1,48 +1,106 @@
-# Sprint 4: Async Ingestion System (Document Extraction)
+# 🛡️ Sprint 4 Technical Blueprint: Async Document Ingestion
 
-## 1. Infrastructure & Data Model (V13 - V15)
-*   **RawDocument Entity:** Stores file metadata with `household_id`, `file_url`, `file_type`, and `uploaded_by` tracking.
-*   **ExtractionJob Entity:** Implements a robust state machine using the `JobStatus` enum: `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`.
-*   **Database Optimization (V15 Migration):**
-    *   `idx_jobs_status_created`: Optimized for high-frequency worker polling.
-    *   **New:** `idx_raw_docs_household_uploader`: Compound index on `(household_id, uploaded_by)` to accelerate multi-tenant document lookups.
-    *   `idx_raw_documents_household`: Enforces fast, household-scoped document isolation.
+This document serves as an exhaustive replication guide for the Sprint 4 Async Ingestion Pipeline. A new engineer can rebuild the entire system by following these technical specifications.
 
-## 2. Secure Ingestion API & Hardened Storage
-*   **Upload Endpoint:** `POST /api/v1/documents/upload`
-*   **[Hardened] Server-Side MIME Detection:** 
-    *   Integrated **Apache Tika** for magic-byte sniffing.
-    *   Uses a 16KB-bounded `BufferedInputStream` to detect real media types without trusting client headers.
-    *   Strict Whitelist: `application/pdf`, `image/jpeg`, `image/png`. Rejects Unknown/Spoofed types (e.g., `.exe` renamed to `.pdf`).
-*   **Storage Abstraction:** Introduced `StoredFile` DTO to encapsulate safe storage paths and detected MIME types, preventing OS-specific path leakage to the controller layer.
-*   **Status Tracking API:** `GET /api/v1/documents/jobs/{jobId}`
-    *   **Security:** Enforces strict household boundaries using `findByIdAndHouseholdId`.
-    *   **Boundary Enforcement:** Removed all repository logic from the Controller; delegated orchestration to `IngestionService`.
+---
 
-## 3. Worker & Async Logic
-*   **Worker Strategy:** `ExtractionWorker` polls the DB every 5 seconds using `FOR UPDATE SKIP LOCKED` for safe concurrency in multi-instance environments.
-*   **Metadata Isolation:** Introduced `IngestionMetadataService` to handle `RawDocument` and `ExtractionJob` persistence in an isolated transaction, resolving Spring proxy self-invocation issues.
-*   **Zombie Job Recovery:** Hardened `resetStaleJobs` query to be **soft-delete aware** (`deleted_at IS NULL`) and to handle terminal state transitions correctly after max retries.
+## 🏗️ 1. Database Schema (DDL)
+Run these Flyway-compatible migrations (`V13-V15`) to establish the ingestion foundation.
 
-## 4. Failure Handling & Retry Engine
-*   **Deadlock Prevention:** Refactored `IngestionFailureService` to accept `UUID jobId` instead of entity objects. It executes lookups and updates in a dedicated `REQUIRES_NEW` transaction to avoid row-lock contention.
-*   **Retry Limit:** `MAX_RETRIES = 3`.
-*   **Idempotency Guards:** Added logic to `handleFailure` to prevent double-processing if a job has already reached a terminal state (`COMPLETED` or `FAILED`).
-*   **Exponential Backoff Logic:** Polling query respects specific intervals:
-    *   Retry 1: After 30 seconds.
-    *   Retry 2: After 2 minutes.
-    *   Final Failure: Automatic transition to `FAILED` status after the 3rd unsuccessful attempt.
+```sql
+-- 1. Ingestion Tables
+CREATE TABLE raw_documents (
+    id UUID PRIMARY KEY,
+    household_id UUID NOT NULL REFERENCES households(id),
+    file_name VARCHAR(255) NOT NULL,
+    file_url VARCHAR(512) NOT NULL,
+    file_type VARCHAR(50) NOT NULL,
+    uploaded_by UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
 
-## 5. Domain Service Normalization
-*   **Deterministic Folding:** Upgraded `DeviceService.normalize()` to use `Locale.ROOT`. This ensures that "MacBook" and "MACBOOK" resolve to the same record regardless of the server's OS locale.
-*   **Service Decoupling:** Refactored `DeviceService` and `WarrantyService` to expose `*Internal` methods for background workers.
+CREATE TABLE extraction_jobs (
+    id UUID PRIMARY KEY,
+    household_id UUID NOT NULL REFERENCES households(id),
+    raw_document_id UUID NOT NULL REFERENCES raw_documents(id),
+    status VARCHAR(50) NOT NULL, -- PENDING, PROCESSING, COMPLETED, FAILED
+    retry_count INT NOT NULL DEFAULT 0,
+    error_message TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
 
-## 6. Hardened Verification Suite
-*   **IngestionIntegrationTest.java:** Significantly expanded to cover:
-    *   **MIME Spoofing:** Rejection of malicious scripts disguised as PDFs.
-    *   **Failure Idempotency:** Ensuring late-arriving errors don't corrupt completed jobs.
-    *   **Retry State Machine:** Verifying correct transitions to `FAILED` after max attempts.
-    *   **Auth Flow:** Restored reliable OTP retrieval from database for test continuity.
-*   **Build & Style:** 
-    *   Verified 100% Checkstyle compliance (fixed 3 violations during hardening).
-    *   Successful `./mvnw clean compile` verification.
+-- 2. Performance & Tenancy Indices
+CREATE INDEX idx_extraction_jobs_status_created ON extraction_jobs (status, created_at) WHERE deleted_at IS NULL;
+CREATE INDEX idx_raw_documents_household ON raw_documents (household_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_raw_documents_household_uploaded_by ON raw_documents(household_id, uploaded_by);
+```
+
+---
+
+## 🛠️ 2. Dependencies & Configuration
+Add the following to `pom.xml` for server-side MIME detection:
+
+```xml
+<dependency>
+    <groupId>org.apache.tika</groupId>
+    <artifactId>tika-core</artifactId>
+    <version>2.9.2</version>
+</dependency>
+```
+
+**Required Properties (`application.yml`):**
+```yaml
+keepr:
+  upload:
+    dir: ${UPLOADS_PATH:/tmp/keepr/uploads}
+```
+
+---
+
+## ⚙️ 3. Core Component Implementation
+
+### A. The Ingestion Flow (Orchestration)
+The system uses a **3-Phase Transactional Lifecycle** to prevent DB connection pool exhaustion.
+
+1.  **Marking (`markProcessing`)**: 
+    - **Transaction**: `@Transactional(propagation = Propagation.REQUIRES_NEW)`
+    - **Logic**: Fetch the job by ID, verify it's not already `PROCESSING`, update status and commit immediately.
+2.  **Processing (OCR/Parsing)**:
+    - **Transaction**: **NONE** (Run in non-transactional method).
+    - **Logic**: Perform long-running I/O (Tesseract/Parsing/FileSystem). Releasing DB connections here prevents pool starvation.
+3.  **Finalizing (`finalizeJob`)**:
+    - **Transaction**: `@Transactional(propagation = Propagation.REQUIRES_NEW)`
+    - **Logic**: Persist domain entities (Devices/Warranties) and mark job as `COMPLETED`.
+
+### B. Background Worker (`ExtractionWorker`)
+- **Schedule**: `@Scheduled(fixedDelay = 5000)`
+- **Query**: `findPendingJobsForUpdate` using `FOR UPDATE SKIP LOCKED` for high-concurrency safety.
+- **handoff**: Passes `UUID jobId` to the processing service to avoid passing stale JPA entities across transaction boundaries.
+
+### C. Security Layer (`FileStorageService`)
+- Detect MIME from first **16KB bytes** using `tika.detect(BufferedInputStream)`.
+- Use `mark()` and `reset()` to ensure the stream is reusable.
+- **Whitelist**: Rejects everything except `application/pdf`, `image/jpeg`, and `image/png`.
+
+### D. Domain Modeling: Physical vs Generic
+- **`DeviceService.createDevice`**: Manual creation always returns a **new instance**.
+- **`DeviceService.createDeviceIngestion`**: Ingestion uses normalized `name+brand+model+household` checks for idempotency.
+
+---
+
+## 🔄 4. Resiliency Details
+- **Max Retries**: Exactly `3`.
+- **Failure Logic**: `handleFailure(UUID jobId, Exception e)` must load a fresh entity in a `REQUIRES_NEW` transaction to avoid locking/deadlock issues.
+- **Normalization**: Use `v.toLowerCase(Locale.ROOT)` in all deduplication logic.
+
+---
+
+## 🧪 5. Testing Requirements
+A replica is not complete without these exact test scenarios:
+1.  **MIME Spoofing**: Attempt to upload a `.sh` script renamed as `.pdf`; must be rejected with `400 Bad Request`.
+2.  **Transaction Rollback**: If `ExtractionJob` creation fails, verify the `RawDocument` file is not orphaned.
+3.  **Batch Drainage**: Run the `ExtractionWorker` against multiple concurrent uploads; verify zero duplicate devices are created.
+4.  **Recursive Cleanup**: Integration tests must clear `users`, `households`, `devices`, and `warranties` in correct FK order during `@BeforeEach`.
