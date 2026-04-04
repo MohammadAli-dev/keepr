@@ -125,16 +125,18 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
         Mockito.doThrow(new RuntimeException("DB Failure"))
                .when(extractionJobRepository).save(org.mockito.ArgumentMatchers.any(com.keepr.ingestion.model.ExtractionJob.class));
 
-        mockMvc.perform(multipart("/api/v1/documents/upload")
-                .file(file)
-                .header("Authorization", "Bearer " + token))
-                .andExpect(status().isInternalServerError());
+        try {
+            mockMvc.perform(multipart("/api/v1/documents/upload")
+                    .file(file)
+                    .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isInternalServerError());
 
-        // Verify TRANSACTION WORKS: RawDocument must NOT be saved even though it is saved before the job
-        assertThat(rawDocumentRepository.count()).isZero();
-        assertThat(extractionJobRepository.count()).isZero();
-
-        Mockito.reset(extractionJobRepository);
+            // Verify TRANSACTION WORKS: RawDocument must NOT be saved even though it is saved before the job
+            assertThat(rawDocumentRepository.count()).isZero();
+            assertThat(extractionJobRepository.count()).isZero();
+        } finally {
+            Mockito.reset(extractionJobRepository);
+        }
     }
 
     @Test
@@ -255,9 +257,11 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(multipart("/api/v1/documents/upload").file(file).header("Authorization", "Bearer " + token));
         mockMvc.perform(multipart("/api/v1/documents/upload").file(file).header("Authorization", "Bearer " + token));
 
-        // Process all jobs
-        extractionWorker.pollAndProcess();
-        extractionWorker.pollAndProcess();
+        // Process all jobs (drain batch)
+        while (!extractionJobRepository.findAll().stream()
+                .allMatch(j -> j.getStatus() == com.keepr.ingestion.model.JobStatus.COMPLETED)) {
+            extractionWorker.pollAndProcess();
+        }
 
         // Should have 1 device and 1 warranty because of idempotency (stubs return identical data)
         assertThat(deviceRepository.count()).isEqualTo(1);

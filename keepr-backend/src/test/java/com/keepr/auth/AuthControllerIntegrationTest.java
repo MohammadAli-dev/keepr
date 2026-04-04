@@ -55,6 +55,8 @@ class AuthControllerIntegrationTest extends AbstractIntegrationTest {
     @BeforeEach
     void cleanDb() {
         authOtpRepository.deleteAll();
+        userRepository.deleteAll();
+        householdRepository.deleteAll();
     }
 
     // -------------------------------------------------------

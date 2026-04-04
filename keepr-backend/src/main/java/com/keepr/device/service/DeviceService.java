@@ -38,18 +38,31 @@ public class DeviceService {
      * @throws KeeprException if validation fails
      */
     public DeviceResponse createDevice(CreateDeviceRequest request, KeeprPrincipal principal) {
-        return createDeviceInternal(request, principal.householdId());
+        DeviceCategory categoryEnum = validateAndParseCategory(request.category());
+        validateCreateRequest(request);
+
+        Device device = new Device();
+        device.setHouseholdId(principal.householdId());
+        device.setName(normalize(request.name()));
+        device.setBrand(normalize(request.brand()));
+        device.setModel(normalize(request.model()));
+        device.setCategory(categoryEnum);
+        device.setPurchaseDate(request.purchaseDate());
+
+        device = deviceRepository.save(device);
+        log.info("Device created manually: id={}, householdId={}", device.getId(), device.getHouseholdId());
+        return toResponse(device);
     }
 
     /**
-     * Internal method to create a device, used by both the API and background workers.
-     * Implements idempotency to prevent duplicate creation of logically identical devices.
+     * Specialized method for ingestion flows to prevent duplicate creation of logically
+     * identical devices from the same extraction job.
      *
      * @param request     the device creation request
      * @param householdId the destination household UUID
      * @return the device response
      */
-    public DeviceResponse createDeviceInternal(CreateDeviceRequest request, UUID householdId) {
+    public DeviceResponse createDeviceIngestion(CreateDeviceRequest request, UUID householdId) {
         DeviceCategory categoryEnum = validateAndParseCategory(request.category());
         validateCreateRequest(request);
 

@@ -38,59 +38,84 @@ public class IngestionProcessingService {
     private final IngestionFailureService ingestionFailureService;
 
     /**
-     * Processes a single extraction job asynchronously.
-     * Uses REQUIRES_NEW to ensure job state updates are committed even if domain logic fails,
-     * while also allowing atomic rollback of domain side-effects upon exception.
+     * Orchestrates the processing of a single extraction job.
+     * This method is NON-TRANSACTIONAL to ensure DB connections are not held during
+     * long-running OCR and parsing I/O.
      *
-     * @param job the job to process
+     * @param jobId the ID of the job to process
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void processJob(ExtractionJob job) {
-        log.info("Processing job id={} retryCount={} householdId={}", 
-                job.getId(), job.getRetryCount(), job.getHouseholdId());
+    public void processJob(UUID jobId) {
+        log.info("Orchestrating processing for job id={}", jobId);
         
         try {
-            // 1. Transition state
-            job.setStatus(JobStatus.PROCESSING);
-            job.setUpdatedAt(OffsetDateTime.now());
-            extractionJobRepository.saveAndFlush(job);
+            // Phase 1: Mark as PROCESSING in a dedicated transaction
+            ExtractionJob job = markProcessing(jobId);
 
-            // 2. Load RawDocument with household validation
+            // Phase 2: Heavy I/O (OCR + Parsing) - NO TRANSACTION
             RawDocument doc = rawDocumentRepository.findByIdAndHouseholdId(job.getRawDocumentId(), job.getHouseholdId())
                     .orElseThrow(() -> new KeeprException(ErrorCode.NOT_FOUND, 
                             "RawDocument not found for household: " + job.getRawDocumentId()));
 
-            // 3. Extraction Flow (Stubs)
             String text = ocrService.extractText(doc.getFileUrl());
             ParsingService.ExtractionResult result = parsingService.parse(text);
 
-            // 4. Persistence (Using internal service methods)
-            DeviceResponse deviceRes = deviceService.createDeviceInternal(
-                    result.deviceRequest(), 
-                    job.getHouseholdId()
-            );
-
-            if (result.warrantyRequest() != null) {
-                // Link warranty to the newly created/existing device
-                CreateWarrantyRequest warrantyReq = updateWarrantyWithDeviceId(
-                        result.warrantyRequest(), 
-                        deviceRes.deviceId()
-                );
-                warrantyService.createWarrantyInternal(warrantyReq, job.getHouseholdId());
-            }
-
-            // 5. Finalize
-            job.setStatus(JobStatus.COMPLETED);
-            job.setErrorMessage(null);
-            job.setUpdatedAt(OffsetDateTime.now());
-            extractionJobRepository.save(job);
-            log.info("Job completed successfully: jobId={}", job.getId());
+            // Phase 3: Finalize and persist domain changes in dedicated transaction
+            finalizeJob(jobId, result);
 
         } catch (Exception e) {
-            log.error("Job processing failed: jobId={}", job.getId(), e);
-            ingestionFailureService.handleFailure(job.getId(), e);
-            throw e;
+            log.error("Job processing failed: jobId={}", jobId, e);
+            ingestionFailureService.handleFailure(jobId, e);
         }
+    }
+
+    /**
+     * Transitions a job to PROCESSING status and commits immediately.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ExtractionJob markProcessing(UUID jobId) {
+        ExtractionJob job = extractionJobRepository.findById(jobId)
+                .orElseThrow(() -> new KeeprException(ErrorCode.NOT_FOUND, "Job not found: " + jobId));
+        
+        // Skip if already processing (safety for concurrent picking)
+        if (job.getStatus() == JobStatus.PROCESSING) {
+            return job;
+        }
+
+        job.setStatus(JobStatus.PROCESSING);
+        job.setUpdatedAt(OffsetDateTime.now());
+        return extractionJobRepository.saveAndFlush(job);
+    }
+
+    /**
+     * Persists extracted domain entities and marks the job as COMPLETED.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void finalizeJob(UUID jobId, ParsingService.ExtractionResult result) {
+        ExtractionJob job = extractionJobRepository.findById(jobId)
+                .orElseThrow(() -> new KeeprException(ErrorCode.NOT_FOUND, "Job not found: " + jobId));
+
+        // Create Device (using ingestion-specific idempotent method)
+        DeviceResponse deviceRes = deviceService.createDeviceIngestion(
+                result.deviceRequest(), 
+                job.getHouseholdId()
+        );
+
+        if (result.warrantyRequest() != null) {
+            // Link warranty to the newly created/existing device
+            CreateWarrantyRequest warrantyReq = updateWarrantyWithDeviceId(
+                    result.warrantyRequest(), 
+                    deviceRes.deviceId()
+            );
+            warrantyService.createWarrantyInternal(warrantyReq, job.getHouseholdId());
+        }
+
+        // Finalize job record
+        job.setStatus(JobStatus.COMPLETED);
+        job.setErrorMessage(null);
+        job.setUpdatedAt(OffsetDateTime.now());
+        extractionJobRepository.saveAndFlush(job);
+        
+        log.info("Job {} completed successfully", jobId);
     }
 
     private CreateWarrantyRequest updateWarrantyWithDeviceId(CreateWarrantyRequest original, UUID deviceId) {

@@ -49,8 +49,8 @@ public class ExtractionWorker {
 
         for (ExtractionJob job : jobs) {
             try {
-                // Processing happens in its own REQUIRES_NEW transaction for isolation
-                ingestionProcessingService.processJob(job);
+                // Orchestration handles its own internal REQUIRES_NEW transactions
+                ingestionProcessingService.processJob(job.getId());
             } catch (Exception e) {
                 log.error("Failed to process extraction job ID={}: {}", job.getId(), e.getMessage(), e);
                 // Isolation: do not re-throw, continue with the next job in the batch.
