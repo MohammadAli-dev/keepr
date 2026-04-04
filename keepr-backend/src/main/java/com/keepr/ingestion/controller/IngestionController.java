@@ -48,16 +48,12 @@ public class IngestionController {
 
         validateFile(file);
 
-        ExtractionJob job = ingestionService.uploadDocument(file, principal);
+        UploadDocumentResponse response = ingestionService.uploadDocument(file, principal);
 
         log.info("Document uploaded & job created: jobId={}, householdId={}", 
-                job.getId(), principal.householdId());
+                response.jobId(), principal.householdId());
 
-        return ResponseEntity.ok(new UploadDocumentResponse(
-                job.getRawDocumentId(), 
-                job.getId(), 
-                job.getStatus())
-        );
+        return ResponseEntity.ok(response);
     }
 
     /**

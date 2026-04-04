@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.keepr.AbstractIntegrationTest;
 import com.keepr.device.repository.DeviceRepository;
 import com.keepr.ingestion.repository.RawDocumentRepository;
 import com.keepr.ingestion.repository.ExtractionJobRepository;
@@ -12,21 +13,14 @@ import com.keepr.ingestion.service.ExtractionWorker;
 import com.keepr.warranty.repository.WarrantyRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -38,27 +32,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Integration tests for Sprint 4: Document Ingestion and Async Extraction.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
-@ActiveProfiles("test")
-class IngestionIntegrationTest {
-
-    private static final int REDIS_PORT = 6379;
-
-    @Container
-    @SuppressWarnings("resource")
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>(DockerImageName.parse("postgres:16"))
-                    .withDatabaseName("keepr_test")
-                    .withUsername("keepr")
-                    .withPassword("keepr_test");
-
-    @Container
-    @SuppressWarnings("resource")
-    static final GenericContainer<?> REDIS =
-            new GenericContainer<>(DockerImageName.parse("redis:7"))
-                    .withExposedPorts(REDIS_PORT);
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+class IngestionIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -78,20 +53,11 @@ class IngestionIntegrationTest {
     @Autowired
     private RawDocumentRepository rawDocumentRepository;
 
-    @Autowired
+    @SpyBean
     private ExtractionJobRepository extractionJobRepository;
 
     @Autowired
     private ExtractionWorker extractionWorker;
-
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
-        registry.add("spring.data.redis.host", REDIS::getHost);
-        registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(REDIS_PORT));
-    }
 
     @BeforeEach
     void cleanDb() {
@@ -121,6 +87,30 @@ class IngestionIntegrationTest {
 
         assertThat(rawDocumentRepository.count()).isEqualTo(1);
         assertThat(extractionJobRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void uploadDocument_transactionRollback_onJobFailure() throws Exception {
+        String token = obtainJwt("9876543210");
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "rollback-test.pdf",
+                MediaType.APPLICATION_PDF_VALUE,
+                "fail".getBytes()
+        );
+
+        // Force ExtractionJobRepository.save to fail
+        Mockito.doThrow(new RuntimeException("DB Failure"))
+               .when(extractionJobRepository).save(org.mockito.ArgumentMatchers.any());
+
+        mockMvc.perform(multipart("/api/v1/documents/upload")
+                .file(file)
+                .header("Authorization", "Bearer " + token))
+                .andExpect(status().isInternalServerError());
+
+        // Verify TRANSACTION WORKS: RawDocument must NOT be saved even though it is saved before the job
+        assertThat(rawDocumentRepository.count()).isZero();
+        assertThat(extractionJobRepository.count()).isZero();
     }
 
     @Test
@@ -178,7 +168,7 @@ class IngestionIntegrationTest {
         var device = deviceRepository.findAll().get(0);
         var warranty = warrantyRepository.findAll().get(0);
 
-        assertThat(device.getName()).isEqualTo("MacBook Pro");
+        assertThat(device.getName()).isEqualTo("macbook pro");
         assertThat(warranty.getDeviceId()).isEqualTo(device.getId());
         assertThat(warranty.getStartDate()).isEqualTo(LocalDate.of(2024, 1, 1));
     }
