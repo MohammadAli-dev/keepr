@@ -1,214 +1,236 @@
-# 🛡️ SPRINT.md — Sprint 3: Device & Warranty Foundation (Keepr)
+# 📋 SPRINT.md — Project Keepr
 
-## 🎯 Sprint Goal
+## Active Sprint: 4
 
-Enable users to:
-
-1. Add devices
-2. Attach warranties
-3. View their devices scoped to their household
-
-👉 This creates the **first usable product experience**
+**Title:** Invoice Ingestion & Extraction (Async, DB-Queue Based)
+**Status:** 🔄 In Progress
 
 ---
 
-## ⚠️ Core Principles (Inherited)
+## 🎯 Goal
 
-* DB is source of truth
-* Strict multi-tenancy (household_id everywhere)
-* No orphaned data
-* Stateless JWT auth enforced
-* Services communicate via service layer only
+Enable users to upload invoices/documents and process them asynchronously into structured data.
 
----
+This sprint introduces:
 
-## 🧱 Scope
-
-### ✅ Included
-
-1. Device CRUD (create + list)
-2. Warranty creation (manual entry only)
-3. Household-scoped access control
-4. Device ↔ Warranty linkage
-5. Basic validation
+* Document ingestion
+* Background processing
+* Basic extraction pipeline (stubbed OCR + parsing)
 
 ---
 
-### ❌ Excluded
+## 🧠 Core Principle
 
-* Invoice parsing (Sprint 4)
-* OCR / AI extraction
+> Upload fast. Process later.
+
+---
+
+## ⚙️ High-Level Flow
+
+Upload → Save Raw Document → Create Job → Return Response
+→ Background Worker → Process → Update Status
+
+---
+
+## 📦 Scope
+
+### INCLUDED
+
+* RawDocument entity
+* ExtractionJob entity
+* Upload API
+* Background worker (DB queue)
+* Job state machine
+* Basic OCR + parsing (stub implementation)
+* Linking parsed data → Device/Warranty (basic)
+
+---
+
+### EXCLUDED
+
+* Real OCR integration (use stub)
+* Gmail/WhatsApp sync
+* Advanced parsing logic
 * Notifications
-* Editing/deleting devices
-* File uploads
+* Retry queues (basic retry only)
 
 ---
 
-## 📦 Data Model
-
-### Device
-
-| Field         | Type          |
-| ------------- | ------------- |
-| id            | UUID          |
-| household_id  | UUID          |
-| name          | String        |
-| brand         | String        |
-| model         | String        |
-| purchase_date | LocalDate     |
-| created_at    | LocalDateTime |
+## 🧱 Data Model
 
 ---
 
-### Warranty
+### 1. RawDocument
 
-| Field        | Type          |
-| ------------ | ------------- |
-| id           | UUID          |
-| device_id    | UUID          |
-| household_id | UUID          |
-| start_date   | LocalDate     |
-| end_date     | LocalDate     |
-| created_at   | LocalDateTime |
-
----
-
-## 🔗 Relationships
-
-* 1 Household → Many Devices
-* 1 Device → Many Warranties
-* Warranty MUST always belong to same household as device
-
----
-
-## 🔐 Access Control Rules
-
-From JWT:
-
-```java
-KeeprPrincipal(userId, householdId, phoneNumber)
+```id="t3p9fa"
+id
+household_id
+file_name
+file_url
+file_type
+uploaded_by
+created_at
 ```
 
-👉 Every query MUST filter by:
+---
 
-```sql
-WHERE household_id = :householdId
+### 2. ExtractionJob
+
+```id="j5o7df"
+id
+household_id
+raw_document_id
+status (PENDING, PROCESSING, COMPLETED, FAILED)
+retry_count
+error_message
+created_at
+updated_at
 ```
 
-❗ Never trust client input for household_id
-
 ---
 
-## 🧠 Business Rules
+## 🔄 Job State Machine
 
-### Device Creation
-
-* Must belong to authenticated household
-* Name required
-* Purchase date cannot be in future
-
----
-
-### Warranty Creation
-
-* Must reference an existing device
-* Device must belong to same household
-* end_date ≥ start_date
-
----
-
-## 📡 API Endpoints
-
-### Device
-
-#### POST /devices
-
-Create new device
-
-Request:
-
-```json
-{
-  "name": "AC",
-  "brand": "LG",
-  "model": "DualCool",
-  "purchaseDate": "2024-06-01"
-}
+```id="o0pfjq"
+PENDING → PROCESSING → COMPLETED
+                  ↓
+                FAILED
 ```
+
+---
+
+## 🔁 Retry Logic
+
+* Max retries: 3
+* On failure:
+
+  * Increment retry_count
+  * If retry_count < 3 → retry
+  * Else → mark FAILED
+
+---
+
+## 🌐 APIs
+
+---
+
+### 1. Upload Document
+
+POST /api/v1/documents/upload
+
+* Accept multipart file
+* Store file (local or S3 stub)
+* Create RawDocument
+* Create ExtractionJob (PENDING)
 
 Response:
 
-```json
+```json id="3k6fh2"
 {
-  "deviceId": "...",
-  "name": "...",
-  "brand": "...",
-  "model": "...",
-  "purchaseDate": "..."
+  "documentId": "UUID",
+  "jobId": "UUID",
+  "status": "PENDING"
 }
 ```
 
 ---
 
-#### GET /devices
+### 2. Get Job Status
 
-List all devices for household
+GET /api/v1/jobs/{jobId}
 
----
+Response:
 
-### Warranty
-
-#### POST /warranties
-
-Create warranty for device
-
-Request:
-
-```json
+```json id="8cl6jz"
 {
-  "deviceId": "...",
-  "startDate": "2024-06-01",
-  "endDate": "2025-06-01"
+  "jobId": "UUID",
+  "status": "PROCESSING",
+  "errorMessage": null
 }
 ```
 
 ---
 
-## 🧪 Testing Requirements
+## 🧠 Worker Design
 
-### Integration Tests
+* Spring @Scheduled job
+* Runs every 3–5 seconds
+* Picks jobs:
 
-1. createDevice_valid_returns200
-2. createDevice_futurePurchaseDate_returns400
-3. listDevices_returnsOnlyHouseholdDevices
-4. createWarranty_valid_returns200
-5. createWarranty_invalidDate_returns400
-6. createWarranty_deviceNotFound_returns404
-7. createWarranty_crossHouseholdDevice_returns403
-8. protectedEndpoints_requireAuth
-9. devicesScopedToHousehold_correctly
-
----
-
-## 🚨 Acceptance Criteria
-
-* User can create device
-* User can list devices
-* User can attach warranty
-* Data is strictly household-scoped
-* No cross-tenant leakage possible
-* All tests pass
-* Checkstyle passes
+```sql id="7g7m2f"
+SELECT * FROM extraction_jobs
+WHERE status = 'PENDING'
+ORDER BY created_at
+LIMIT 5
+FOR UPDATE SKIP LOCKED
+```
 
 ---
 
-## 🚀 What This Unlocks
+### Processing Steps
 
-* First real product value
-* Foundation for:
+1. Mark job → PROCESSING
+2. Fetch RawDocument
+3. Run OCR (stub)
+4. Run parsing (stub)
+5. Create:
 
-  * Invoice ingestion (Sprint 4)
-  * Warranty reminders (Sprint 5)
-  * Notifications
+   * Device (if new)
+   * Warranty (if found)
+6. Mark job → COMPLETED
 
 ---
+
+### Failure Handling
+
+* Catch exception
+* Increment retry_count
+* Store error_message
+* Retry or mark FAILED
+
+---
+
+## 🧪 Testing
+
+### Required Tests
+
+* Upload creates job
+* Worker picks job
+* Job transitions correctly
+* Failed job retries
+* Completed job creates device/warranty
+* Multi-tenancy enforced
+
+---
+
+## ⚠️ Constraints
+
+* No processing inside API
+* All jobs must include household_id
+* Worker must be idempotent
+* No duplicate device creation (basic check)
+* Follow AGENTS.md strictly
+
+---
+
+## 🏁 Exit Criteria
+
+* Upload API works
+* Jobs created correctly
+* Worker processes jobs
+* Status updates correctly
+* Data saved in DB
+* Tests pass
+* No cross-tenant leakage
+
+---
+
+## 🚀 Outcome
+
+Keepr can now:
+
+* Accept real-world documents
+* Process them asynchronously
+* Convert unstructured data → structured system
+
+This is the first step toward an intelligent system.

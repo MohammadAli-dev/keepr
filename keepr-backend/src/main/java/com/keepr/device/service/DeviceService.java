@@ -2,6 +2,8 @@ package com.keepr.device.service;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
 
 import com.keepr.common.exception.ErrorCode;
 import com.keepr.common.exception.KeeprException;
@@ -13,6 +15,7 @@ import com.keepr.device.model.DeviceCategory;
 import com.keepr.device.repository.DeviceRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -40,16 +43,75 @@ public class DeviceService {
 
         Device device = new Device();
         device.setHouseholdId(principal.householdId());
-        device.setName(request.name().trim());
-        device.setBrand(request.brand());
-        device.setModel(request.model());
+        device.setName(normalize(request.name()));
+        device.setBrand(normalize(request.brand()));
+        device.setModel(normalize(request.model()));
         device.setCategory(categoryEnum);
         device.setPurchaseDate(request.purchaseDate());
 
         device = deviceRepository.save(device);
-        log.info("Device created: id={}, householdId={}", device.getId(), device.getHouseholdId());
-
+        log.info("Device created manually: id={}, householdId={}", device.getId(), device.getHouseholdId());
         return toResponse(device);
+    }
+
+    /**
+     * Specialized method for ingestion flows to prevent duplicate creation of logically
+     * identical devices from the same extraction job.
+     *
+     * @param request     the device creation request
+     * @param householdId the destination household UUID
+     * @return the device response
+     */
+    public DeviceResponse createDeviceIngestion(CreateDeviceRequest request, UUID householdId) {
+        DeviceCategory categoryEnum = validateAndParseCategory(request.category());
+        validateCreateRequest(request);
+
+        String name = normalize(request.name());
+        String brand = normalize(request.brand());
+        String model = normalize(request.model());
+
+        // 1. First attempt: Standard idempotency check
+        return deviceRepository.findByNameAndBrandAndModelAndHouseholdIdAndDeletedAtIsNull(
+                name, brand, model, householdId)
+                .map(device -> {
+                    log.info("Returning existing device for idempotency: id={}", device.getId());
+                    return toResponse(device);
+                })
+                .orElseGet(() -> {
+                    try {
+                        Device device = new Device();
+                        device.setHouseholdId(householdId);
+                        device.setName(name);
+                        device.setBrand(brand);
+                        device.setModel(model);
+                        device.setCategory(categoryEnum);
+                        device.setPurchaseDate(request.purchaseDate());
+
+                        device = deviceRepository.save(device);
+                        log.info("Device created: id={}, householdId={}", device.getId(), device.getHouseholdId());
+                        return toResponse(device);
+                    } catch (DataIntegrityViolationException e) {
+                        log.warn("Duplicate device detected during concurrent save, re-fetching: " 
+                                + "name={}, brand={}, model={}", name, brand, model);
+                        // 2. Second attempt: Re-query using exactly the same normalized variables
+                        return deviceRepository.findByNameAndBrandAndModelAndHouseholdIdAndDeletedAtIsNull(
+                                name, brand, model, householdId)
+                                .map(this::toResponse)
+                                .orElseThrow(() -> new KeeprException(ErrorCode.INTERNAL_ERROR, 
+                                        "Device creation failed after collision retry: " + name));
+                    }
+                });
+    }
+
+    private String normalize(String value) {
+        if (value == null) {
+            return null;
+        }
+        String v = value.trim();
+        if (v.isEmpty()) {
+            return null;
+        }
+        return v.toLowerCase(Locale.ROOT);
     }
 
     /**

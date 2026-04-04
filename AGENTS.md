@@ -70,10 +70,13 @@ users → notifications
 ### 1. Java Style
 
 * Use **Records** for DTOs
-* Lombok ONLY:
+* Lombok: The following annotations are permitted:
+  * `@Slf4j` — on any class that needs logging
+  * `@RequiredArgsConstructor` — on Services and Components
+  * `@Getter` and `@Setter` — on JPA entity classes ONLY
+  All other Lombok annotations are prohibited.
 
-  * `@Slf4j`
-  * `@RequiredArgsConstructor`
+@Data is explicitly banned on JPA entities — it generates equals()/hashCode() based on all fields which breaks JPA identity.
 * Follow Google Java Style
 * Javadoc required for all public methods
 * No wildcard imports

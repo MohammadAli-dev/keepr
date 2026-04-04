@@ -1,6 +1,7 @@
 package com.keepr.warranty.service;
 
 import java.util.List;
+import java.util.UUID;
 
 import com.keepr.common.exception.ErrorCode;
 import com.keepr.common.exception.KeeprException;
@@ -38,20 +39,41 @@ public class WarrantyService {
      * @throws KeeprException if validation fails or the device is not found
      */
     public WarrantyResponse createWarranty(CreateWarrantyRequest request, KeeprPrincipal principal) {
+        return createWarrantyInternal(request, principal.householdId());
+    }
+
+    /**
+     * Internal method to create a warranty, used by both the API and background workers.
+     * Implements idempotency to prevent duplicate creation of identical warranties.
+     *
+     * @param request     the warranty creation request
+     * @param householdId the destination household UUID
+     * @return the warranty response
+     */
+    public WarrantyResponse createWarrantyInternal(CreateWarrantyRequest request, UUID householdId) {
         WarrantyType typeEnum = validateAndParseType(request.type());
         validateDates(request);
 
         // Fetch device via ownership service — returns 404 for both not-found and cross-tenant
-        Device device = deviceOwnershipService.getOwnedDevice(request.deviceId(), principal.householdId());
+        Device device = deviceOwnershipService.getOwnedDevice(request.deviceId(), householdId);
 
-        // Overlap validation
+        // Overlap validation and Idempotency check
         List<Warranty> existingWarranties = warrantyRepository.findAllByDeviceIdAndHouseholdIdAndDeletedAtIsNull(
-                device.getId(), principal.householdId());
-        
+                device.getId(), householdId);
+
         for (Warranty existing : existingWarranties) {
             if (existing.getType() == typeEnum) {
                 if (existing.getStartDate() != null && existing.getEndDate() != null &&
                         request.startDate() != null && request.endDate() != null) {
+
+                    // Exact match check for idempotency
+                    if (existing.getStartDate().equals(request.startDate()) &&
+                            existing.getEndDate().equals(request.endDate())) {
+                        log.info("Returning existing warranty for idempotency: id={}", existing.getId());
+                        return toResponse(existing);
+                    }
+
+                    // Overlap check
                     if (!request.startDate().isAfter(existing.getEndDate()) &&
                             !existing.getStartDate().isAfter(request.endDate())) {
                         throw new KeeprException(
@@ -64,7 +86,7 @@ public class WarrantyService {
 
         Warranty warranty = new Warranty();
         warranty.setDeviceId(device.getId());
-        warranty.setHouseholdId(principal.householdId());
+        warranty.setHouseholdId(householdId);
         warranty.setType(typeEnum);
         warranty.setStartDate(request.startDate());
         warranty.setEndDate(request.endDate());

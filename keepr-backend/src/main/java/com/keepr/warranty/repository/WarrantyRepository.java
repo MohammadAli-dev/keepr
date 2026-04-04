@@ -32,6 +32,7 @@ public interface WarrantyRepository extends JpaRepository<Warranty, UUID> {
      * @return list of active warranties for the given device
      */
     List<Warranty> findAllByDeviceIdAndHouseholdIdAndDeletedAtIsNull(UUID deviceId, UUID householdId);
+
     /**
      * Finds a warranty by its ID and household ID that is not deleted.
      * Used for direct warranty lookup and permission checking.

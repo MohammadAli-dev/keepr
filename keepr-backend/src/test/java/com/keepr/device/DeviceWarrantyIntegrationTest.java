@@ -7,8 +7,7 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.keepr.auth.model.AuthOtp;
-import com.keepr.auth.repository.AuthOtpRepository;
+import com.keepr.AbstractIntegrationTest;
 import com.keepr.device.model.Device;
 import com.keepr.device.repository.DeviceRepository;
 import com.keepr.warranty.repository.WarrantyRepository;
@@ -16,19 +15,10 @@ import com.keepr.warranty.model.Warranty;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -38,29 +28,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Integration tests for Sprint 3: Device  and Warranty endpoints.
- * Uses Testcontainers with real Postgres and Redis.
- * All tests authenticate via the OTP flow first to obtain a valid JWT.
+ * Uses shared Testcontainers from AbstractIntegrationTest.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
-@ActiveProfiles("test")
-class DeviceWarrantyIntegrationTest {
-
-    private static final int REDIS_PORT = 6379;
-
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>(DockerImageName.parse("postgres:16"))
-                    .withDatabaseName("keepr_test")
-                    .withUsername("keepr")
-                    .withPassword("keepr_test");
-
-    @Container
-    @SuppressWarnings("resource")
-    static final GenericContainer<?> REDIS =
-            new GenericContainer<>(DockerImageName.parse("redis:7"))
-                    .withExposedPorts(REDIS_PORT);
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+class DeviceWarrantyIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -69,7 +40,7 @@ class DeviceWarrantyIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Autowired
-    private AuthOtpRepository authOtpRepository;
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Autowired
     private DeviceRepository deviceRepository;
@@ -77,25 +48,10 @@ class DeviceWarrantyIntegrationTest {
     @Autowired
     private WarrantyRepository warrantyRepository;
 
-    /**
-     * Injects Testcontainers connection properties into the Spring context.
-     *
-     * @param registry the dynamic property registry
-     */
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
-        registry.add("spring.data.redis.host", REDIS::getHost);
-        registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(REDIS_PORT));
-    }
-
     @BeforeEach
     void cleanDb() {
         warrantyRepository.deleteAll();
         deviceRepository.deleteAll();
-        authOtpRepository.deleteAll();
     }
 
     // -------------------------------------------------------
@@ -122,9 +78,9 @@ class DeviceWarrantyIntegrationTest {
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deviceId").isNotEmpty())
-                .andExpect(jsonPath("$.name").value("LG AC"))
-                .andExpect(jsonPath("$.brand").value("LG"))
-                .andExpect(jsonPath("$.model").value("DualCool"))
+                .andExpect(jsonPath("$.name").value("lg ac"))
+                .andExpect(jsonPath("$.brand").value("lg"))
+                .andExpect(jsonPath("$.model").value("dualcool"))
                 .andExpect(jsonPath("$.category").value("AC"))
                 .andExpect(jsonPath("$.purchaseDate").value("2024-06-01"));
     }
@@ -174,7 +130,7 @@ class DeviceWarrantyIntegrationTest {
 
         JsonNode devices = objectMapper.readTree(result.getResponse().getContentAsString());
         assertThat(devices.size()).isEqualTo(1);
-        assertThat(devices.get(0).get("name").asText()).isEqualTo("User A Device");
+        assertThat(devices.get(0).get("name").asText()).isEqualTo("user a device");
     }
 
     @Test
@@ -211,8 +167,8 @@ class DeviceWarrantyIntegrationTest {
         JsonNode devices = objectMapper.readTree(result.getResponse().getContentAsString());
         assertThat(devices.size()).isEqualTo(2);
         // Newest first
-        assertThat(devices.get(0).get("name").asText()).isEqualTo("Newer Device");
-        assertThat(devices.get(1).get("name").asText()).isEqualTo("Older Device");
+        assertThat(devices.get(0).get("name").asText()).isEqualTo("newer device");
+        assertThat(devices.get(1).get("name").asText()).isEqualTo("older device");
     }
 
     @Test
@@ -466,7 +422,7 @@ class DeviceWarrantyIntegrationTest {
                 .andReturn();
         JsonNode devicesB = objectMapper.readTree(resultB.getResponse().getContentAsString());
         assertThat(devicesB.size()).isEqualTo(1);
-        assertThat(devicesB.get(0).get("name").asText()).isEqualTo("Device B1");
+        assertThat(devicesB.get(0).get("name").asText()).isEqualTo("device b1");
     }
 
     // -------------------------------------------------------
@@ -480,16 +436,22 @@ class DeviceWarrantyIntegrationTest {
      * @return the JWT access token
      */
     private String authenticateUser(String phone) throws Exception {
-        AuthOtp otp = new AuthOtp();
-        otp.setPhoneNumber(phone);
-        otp.setOtpCode("123456");
-        otp.setExpiresAt(Instant.now().plus(10, ChronoUnit.MINUTES));
-        authOtpRepository.save(otp);
+        // Send OTP
+        mockMvc.perform(post("/auth/send-otp")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new com.keepr.auth.dto.SendOtpRequest(phone))))
+                .andExpect(status().isOk());
+
+        // Get OTP from DB using JdbcTemplate since the backend still uses Postgres for OTPs
+        String code = jdbcTemplate.queryForObject(
+                "SELECT otp_code FROM auth_otp WHERE phone_number = ? ORDER BY expires_at DESC LIMIT 1",
+                String.class, phone);
 
         MvcResult result = mockMvc.perform(post("/auth/verify-otp")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new com.keepr.auth.dto.VerifyOtpRequest(phone, "123456"))))
+                                new com.keepr.auth.dto.VerifyOtpRequest(phone, code))))
                 .andExpect(status().isOk())
                 .andReturn();
 
