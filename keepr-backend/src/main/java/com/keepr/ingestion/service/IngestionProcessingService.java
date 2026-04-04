@@ -55,10 +55,10 @@ public class IngestionProcessingService {
             job.setUpdatedAt(OffsetDateTime.now());
             extractionJobRepository.saveAndFlush(job);
 
-            // 2. Load RawDocument
+            // 2. Load RawDocument with household validation
             RawDocument doc = rawDocumentRepository.findByIdAndHouseholdId(job.getRawDocumentId(), job.getHouseholdId())
                     .orElseThrow(() -> new KeeprException(ErrorCode.NOT_FOUND, 
-                            "RawDocument not found: " + job.getRawDocumentId()));
+                            "RawDocument not found for household: " + job.getRawDocumentId()));
 
             // 3. Extraction Flow (Stubs)
             String text = ocrService.extractText(doc.getFileUrl());
@@ -88,7 +88,7 @@ public class IngestionProcessingService {
 
         } catch (Exception e) {
             log.error("Job processing failed: jobId={}", job.getId(), e);
-            ingestionFailureService.handleFailure(job, e);
+            ingestionFailureService.handleFailure(job.getId(), e);
             throw e;
         }
     }

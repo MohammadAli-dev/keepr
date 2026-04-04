@@ -2,6 +2,7 @@ package com.keepr.device.service;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 import com.keepr.common.exception.ErrorCode;
@@ -93,8 +94,11 @@ public class DeviceService {
         if (value == null) {
             return null;
         }
-        String normalized = value.trim().toLowerCase();
-        return normalized.isEmpty() ? null : normalized;
+        String v = value.trim();
+        if (v.isEmpty()) {
+            return null;
+        }
+        return v.toLowerCase(Locale.ROOT);
     }
 
     /**

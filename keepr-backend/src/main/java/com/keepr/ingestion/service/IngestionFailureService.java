@@ -1,6 +1,7 @@
 package com.keepr.ingestion.service;
 
 import java.time.OffsetDateTime;
+import java.util.UUID;
 
 import com.keepr.ingestion.model.ExtractionJob;
 import com.keepr.ingestion.model.JobStatus;
@@ -27,27 +28,41 @@ public class IngestionFailureService {
     private static final int MAX_RETRIES = 3;
 
     /**
-     * Handles job failure by incrementing retry count and updating status.
-     * Runs in REQUIRES_NEW to ensure job state is persisted even if the main transaction rolls back.
+     * Handles processing failures by incrementing retry counts or marking as FAILED.
+     * Runs in a separate transaction to ensure status updates are persisted even if 
+     * the main processing transaction rolls back.
      *
-     * @param job the job that failed
-     * @param e   the exception that caused the failure
+     * @param jobId the ID of the job that failed
+     * @param e     the exception that occurred
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void handleFailure(ExtractionJob job, Exception e) {
-        log.error("Handling failure for jobId={}: {}", job.getId(), e.getMessage());
-        
-        job.setRetryCount(job.getRetryCount() + 1);
+    public void handleFailure(UUID jobId, Exception e) {
+        ExtractionJob job = extractionJobRepository.findById(jobId).orElse(null);
+        if (job == null) {
+            log.error("Could not handle failure: Job not found: {}", jobId);
+            return;
+        }
+
+        // Idempotency: skip if already terminal
+        if (job.getStatus() == JobStatus.COMPLETED || job.getStatus() == JobStatus.FAILED) {
+            log.info("Job {} already in terminal state {}, skipping failure handling",
+                    jobId, job.getStatus());
+            return;
+        }
+
+        int newRetryCount = job.getRetryCount() + 1;
+        job.setRetryCount(newRetryCount);
         job.setErrorMessage(e.getMessage());
         job.setUpdatedAt(OffsetDateTime.now());
 
-        if (job.getRetryCount() >= MAX_RETRIES) {
+        if (newRetryCount >= MAX_RETRIES) {
+            log.error("Job {} reached max retries (3). Marking as FAILED.", jobId);
             job.setStatus(JobStatus.FAILED);
-            log.error("Job reached max retries and FAILED: jobId={}", job.getId());
             
             // Physical disk cleanup for permanent failures
             cleanupFile(job);
         } else {
+            log.warn("Job {} failed (attempt {}). Marking as PENDING for retry.", jobId, newRetryCount);
             job.setStatus(JobStatus.PENDING);
             log.warn("Job marked for retry (count={}): jobId={}", job.getRetryCount(), job.getId());
         }

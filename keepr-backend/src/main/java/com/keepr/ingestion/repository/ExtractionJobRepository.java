@@ -60,7 +60,9 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
             "END, " +
             "j.retryCount = j.retryCount + 1, " +
             "j.updatedAt = :now " +
-            "WHERE j.status = com.keepr.ingestion.model.JobStatus.PROCESSING AND j.updatedAt < :threshold")
+            "WHERE j.status = com.keepr.ingestion.model.JobStatus.PROCESSING " +
+            "AND j.updatedAt < :threshold " +
+            "AND j.deletedAt IS NULL")
     int resetStaleJobs(@Param("threshold") OffsetDateTime threshold, @Param("now") OffsetDateTime now);
 
     /**

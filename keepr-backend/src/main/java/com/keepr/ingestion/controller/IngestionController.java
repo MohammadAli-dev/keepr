@@ -2,13 +2,9 @@ package com.keepr.ingestion.controller;
 
 import java.util.UUID;
 
-import com.keepr.common.exception.ErrorCode;
-import com.keepr.common.exception.KeeprException;
 import com.keepr.common.security.KeeprPrincipal;
 import com.keepr.ingestion.dto.JobStatusResponse;
 import com.keepr.ingestion.dto.UploadDocumentResponse;
-import com.keepr.ingestion.model.ExtractionJob;
-import com.keepr.ingestion.repository.ExtractionJobRepository;
 import com.keepr.ingestion.service.IngestionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +28,6 @@ import org.springframework.web.multipart.MultipartFile;
 public class IngestionController {
 
     private final IngestionService ingestionService;
-    private final ExtractionJobRepository extractionJobRepository;
 
     /**
      * Uploads a document for asynchronous processing.
@@ -45,8 +40,6 @@ public class IngestionController {
     public ResponseEntity<UploadDocumentResponse> uploadDocument(
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal KeeprPrincipal principal) {
-
-        validateFile(file);
 
         UploadDocumentResponse response = ingestionService.uploadDocument(file, principal);
 
@@ -68,22 +61,7 @@ public class IngestionController {
             @PathVariable UUID jobId,
             @AuthenticationPrincipal KeeprPrincipal principal) {
 
-        ExtractionJob job = extractionJobRepository.findByIdAndHouseholdId(jobId, principal.householdId())
-                .orElseThrow(() -> new KeeprException(ErrorCode.NOT_FOUND, "Job not found"));
-
-        return ResponseEntity.ok(new JobStatusResponse(job.getId(), job.getStatus(), job.getErrorMessage()));
+        return ResponseEntity.ok(ingestionService.getJobStatus(jobId, principal.householdId()));
     }
 
-    private void validateFile(MultipartFile file) {
-        if (file.isEmpty()) {
-            throw new KeeprException(ErrorCode.BAD_REQUEST, "File is empty");
-        }
-        if (file.getSize() > 10 * 1024 * 1024) { // 10MB limit
-            throw new KeeprException(ErrorCode.BAD_REQUEST, "File exceeds 10MB limit");
-        }
-        String contentType = file.getContentType();
-        if (contentType == null || (!contentType.equals("application/pdf") && !contentType.startsWith("image/"))) {
-            throw new KeeprException(ErrorCode.BAD_REQUEST, "Unsupported file type. Only PDF and Images allowed.");
-        }
-    }
 }
