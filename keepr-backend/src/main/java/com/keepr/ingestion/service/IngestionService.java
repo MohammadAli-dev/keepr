@@ -29,7 +29,7 @@ public class IngestionService {
      *
      * @param file      multipart object from controller
      * @param principal authenticated user principal
-     * @return tracking details of the new extraction job
+     * @return {@link UploadDocumentResponse} containing generated tracking IDs (documentId, jobId)
      */
     public UploadDocumentResponse uploadDocument(MultipartFile file, KeeprPrincipal principal) {
         // Step 1: Storage (Outside Transaction)

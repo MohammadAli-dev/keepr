@@ -111,6 +111,9 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
         // Verify TRANSACTION WORKS: RawDocument must NOT be saved even though it is saved before the job
         assertThat(rawDocumentRepository.count()).isZero();
         assertThat(extractionJobRepository.count()).isZero();
+
+        // Step 4: Cleanup Spy
+        Mockito.reset(extractionJobRepository);
     }
 
     @Test
