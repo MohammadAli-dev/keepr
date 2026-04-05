@@ -61,6 +61,7 @@ public class IngestionProcessingService {
         long validateMs = 0;
         ConfidenceService.ConfidenceResult confResult = null;
         ParsingService.ExtractionResult parsingResult = null;
+        ValidationResult warrantyVal = null;
         String rawText = null;
 
         log.info("Processing job id={}, version=1", jobId);
@@ -101,7 +102,7 @@ public class IngestionProcessingService {
                 }
 
                 // Optional Warranty Validation (Log but don't fail)
-                ValidationResult warrantyVal = validationService.validateWarranty(parsingResult);
+                warrantyVal = validationService.validateWarranty(parsingResult);
                 if (!warrantyVal.valid()) {
                     log.info("Warranty validation for job {}: {}. Skipping warranty.",
                             jobId, warrantyVal.reason());
@@ -112,7 +113,7 @@ public class IngestionProcessingService {
 
             // Phase 3: Atomic Finalization [REQUIRES_NEW]
             finalizeJob(jobId, parsingResult, confResult, rawText, 
-                    (int) ocrMs, (int) parseMs, (int) validateMs);
+                    (int) ocrMs, (int) parseMs, (int) validateMs, warrantyVal);
 
         } catch (ExtractionException e) {
             status = e.getFailureReason();
@@ -157,7 +158,8 @@ public class IngestionProcessingService {
                            String rawText,
                            int ocrMs,
                            int parseMs,
-                           int validateMs) {
+                           int validateMs,
+                           ValidationResult warrantyVal) {
         ExtractionJob job = extractionJobRepository.findById(jobId)
                 .orElseThrow(() -> new KeeprException(ErrorCode.NOT_FOUND, "Job not found"));
 
@@ -185,7 +187,6 @@ public class IngestionProcessingService {
         );
 
         // 3. Optional Warranty Creation
-        ValidationResult warrantyVal = validationService.validateWarranty(result);
         if (warrantyVal.valid() && result.warrantyEnd() != null) {
             warrantyService.createWarrantyInternal(
                     toWarrantyRequest(result, device.deviceId()), 

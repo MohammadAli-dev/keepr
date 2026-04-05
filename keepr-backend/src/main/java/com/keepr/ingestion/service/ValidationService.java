@@ -17,6 +17,9 @@ public class ValidationService {
      * Mandatory: productName must be present, and confidence must be above threshold.
      */
     public ValidationResult validateDevice(ParsingService.ExtractionResult result, double confidenceScore) {
+        if (result == null) {
+            return ValidationResult.failure("Missing mandatory parameter: result");
+        }
         if (result.productName() == null || result.productName().isBlank()) {
             return ValidationResult.failure("Missing mandatory field: productName");
         }
@@ -31,6 +34,9 @@ public class ValidationService {
      * Logic: If dates are present, end date must not be before start date.
      */
     public ValidationResult validateWarranty(ParsingService.ExtractionResult result) {
+        if (result == null) {
+            return ValidationResult.failure("Missing mandatory parameter: result");
+        }
         if (result.warrantyStart() != null && result.warrantyEnd() != null) {
             if (result.warrantyEnd().isBefore(result.warrantyStart())) {
                 return ValidationResult.failure("Warranty end date cannot be before start date");

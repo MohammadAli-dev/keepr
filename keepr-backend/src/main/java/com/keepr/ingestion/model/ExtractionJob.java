@@ -40,6 +40,10 @@ public class ExtractionJob {
     @Column(nullable = false)
     private int retryCount = 0;
 
+    /**
+     * Stores a human-readable summary of the error, often including the exception 
+     * message or a snippet of the stack trace for debugging purposes.
+     */
     private String errorMessage;
 
     @Column(nullable = false, updatable = false)
@@ -59,6 +63,10 @@ public class ExtractionJob {
     @Column(columnDefinition = "jsonb")
     private java.util.Map<String, Object> extractionJson;
 
+    /**
+     * A structured, machine-readable classification of the failure (e.g., LOW_CONFIDENCE,
+     * INVALID_DEVICE). Used for automated reporting, analytics, and UI messaging.
+     */
     private String failureReason;
 
     @Column(nullable = false)

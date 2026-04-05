@@ -35,7 +35,7 @@ public class ParsingService {
      * Parses OCR text into a structured ExtractionResult.
      *
      * @param rawText the raw text from OCR
-     * @return structured ExtractionResult with confidence score
+     * @return structured ExtractionResult containing parsed fields and segments
      */
     public ExtractionResult parse(String rawText) {
         log.info("Starting rule-based parsing of OCR text...");
@@ -74,8 +74,8 @@ public class ParsingService {
         }
         try {
             return LocalDate.parse(dateStr);
-        } catch (Exception e) {
-            log.warn("Failed to parse date: {}", dateStr);
+        } catch (java.time.format.DateTimeParseException e) {
+            log.warn("Failed to parse date: {}", dateStr, e);
             return null;
         }
     }

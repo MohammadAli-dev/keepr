@@ -29,6 +29,9 @@ public class FileStorageService {
     @Value("${keepr.upload.dir:/tmp/keepr-uploads}")
     private String uploadDir;
 
+    @Value("${keepr.upload.max-file-size:10MB}")
+    private String maxFileSizeStr;
+
     private final Tika tika = new Tika();
 
     private static final int MIME_SNIFF_THRESHOLD = 16384; // 16KB
@@ -68,6 +71,7 @@ public class FileStorageService {
      * @return StoredFile details (path and detected content type)
      */
     public StoredFile store(MultipartFile file) {
+        validateSize(file);
         try (InputStream is = file.getInputStream();
                 BufferedInputStream bis = new BufferedInputStream(is)) {
             
@@ -129,6 +133,25 @@ public class FileStorageService {
             log.error("Failed to delete file: {}", pathToDelete, e);
             throw new KeeprException(ErrorCode.INTERNAL_ERROR, "File deletion failed");
         }
+    }
+
+    private void validateSize(MultipartFile file) {
+        long maxSizeBytes = parseSize(maxFileSizeStr);
+        if (file.getSize() > maxSizeBytes) {
+            log.warn("Rejected upload: size={} bytes exceeds max={} for file={}", 
+                    file.getSize(), maxSizeBytes, file.getOriginalFilename());
+            throw new KeeprException(ErrorCode.BAD_REQUEST, "File too large: maximum size is " + maxFileSizeStr);
+        }
+    }
+
+    private long parseSize(String sizeStr) {
+        String s = sizeStr.toUpperCase().trim();
+        if (s.endsWith("MB")) {
+            return Long.parseLong(s.substring(0, s.length() - 2)) * 1024 * 1024;
+        } else if (s.endsWith("KB")) {
+            return Long.parseLong(s.substring(0, s.length() - 2)) * 1024;
+        }
+        return Long.parseLong(s);
     }
 
     private String getSafeExtension(String contentType) {

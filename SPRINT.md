@@ -1,236 +1,185 @@
-# 📋 SPRINT.md — Project Keepr
+Sprint 5: Intelligence Layer (OCR + Parsing + Confidence)
+🎯 Sprint Goal
 
-## Active Sprint: 4
+Build a robust, extensible intelligence pipeline that converts raw documents into structured, high-confidence entities (Device, Warranty, Invoice).
 
-**Title:** Invoice Ingestion & Extraction (Async, DB-Queue Based)
-**Status:** 🔄 In Progress
+This sprint upgrades ingestion from:
 
----
+File → Stub Data
 
-## 🎯 Goal
+to:
 
-Enable users to upload invoices/documents and process them asynchronously into structured data.
+File → OCR → Parsed Data → Confidence Score → Structured Entities
+🧠 Core Principles
+Deterministic + AI Hybrid
+Prefer deterministic parsing first
+Use AI only as fallback
+Confidence-Driven System
+Every extracted field must have a confidence score
+Non-Blocking Pipeline
+No long AI/OCR calls inside DB transactions
+Extensible Architecture
+Easy to plug:
+Google Vision
+Tesseract
+LLM providers
+🏗️ Architecture Overview
+RawDocument
+   ↓
+OCR Service
+   ↓
+Raw Text
+   ↓
+Parsing Engine
+   ↓
+Structured Data + Confidence
+   ↓
+Validation Layer
+   ↓
+Device / Warranty Creation
+📦 Scope
+🔴 1. OCR Layer (Real Implementation)
+Objective
 
-This sprint introduces:
+Replace stub OCR with real extraction capability.
 
-* Document ingestion
-* Background processing
-* Basic extraction pipeline (stubbed OCR + parsing)
-
----
-
-## 🧠 Core Principle
-
-> Upload fast. Process later.
-
----
-
-## ⚙️ High-Level Flow
-
-Upload → Save Raw Document → Create Job → Return Response
-→ Background Worker → Process → Update Status
-
----
-
-## 📦 Scope
-
-### INCLUDED
-
-* RawDocument entity
-* ExtractionJob entity
-* Upload API
-* Background worker (DB queue)
-* Job state machine
-* Basic OCR + parsing (stub implementation)
-* Linking parsed data → Device/Warranty (basic)
-
----
-
-### EXCLUDED
-
-* Real OCR integration (use stub)
-* Gmail/WhatsApp sync
-* Advanced parsing logic
-* Notifications
-* Retry queues (basic retry only)
-
----
-
-## 🧱 Data Model
-
----
-
-### 1. RawDocument
-
-```id="t3p9fa"
-id
-household_id
-file_name
-file_url
-file_type
-uploaded_by
-created_at
-```
-
----
-
-### 2. ExtractionJob
-
-```id="j5o7df"
-id
-household_id
-raw_document_id
-status (PENDING, PROCESSING, COMPLETED, FAILED)
-retry_count
-error_message
-created_at
-updated_at
-```
-
----
-
-## 🔄 Job State Machine
-
-```id="o0pfjq"
-PENDING → PROCESSING → COMPLETED
-                  ↓
-                FAILED
-```
-
----
-
-## 🔁 Retry Logic
-
-* Max retries: 3
-* On failure:
-
-  * Increment retry_count
-  * If retry_count < 3 → retry
-  * Else → mark FAILED
-
----
-
-## 🌐 APIs
-
----
-
-### 1. Upload Document
-
-POST /api/v1/documents/upload
-
-* Accept multipart file
-* Store file (local or S3 stub)
-* Create RawDocument
-* Create ExtractionJob (PENDING)
-
-Response:
-
-```json id="3k6fh2"
-{
-  "documentId": "UUID",
-  "jobId": "UUID",
-  "status": "PENDING"
+Components
+OcrService (Upgrade)
+String extractText(String fileUrl)
+Implementation Strategy
+Phase 1 (Sprint 5):
+Keep stub as default
+Add pluggable interface
+Add provider interface:
+interface OcrProvider {
+    String extractText(Path filePath);
 }
-```
+Providers (structure only)
+StubOcrProvider (default)
+GoogleVisionOcrProvider (future)
+TesseractOcrProvider (optional)
+Rules
+NO API calls inside transaction
+OCR must run outside DB transaction
+🔴 2. Parsing Engine (Core Intelligence)
+Objective
 
----
+Convert raw OCR text → structured fields
 
-### 2. Get Job Status
+New Component
+ParsingService
+ExtractionResult parse(String rawText)
+ExtractionResult (IMPORTANT)
 
-GET /api/v1/jobs/{jobId}
+Use Java record:
 
-Response:
-
-```json id="8cl6jz"
-{
-  "jobId": "UUID",
-  "status": "PROCESSING",
-  "errorMessage": null
+public record ExtractionResult(
+    String productName,
+    String brand,
+    String model,
+    LocalDate purchaseDate,
+    LocalDate warrantyStart,
+    LocalDate warrantyEnd,
+    Double confidenceScore
+) {}
+Parsing Strategy (Tiered)
+🟢 Tier 1: Deterministic Parsing
+Regex-based extraction:
+Dates
+Warranty keywords
+Brand detection
+🟡 Tier 2: Heuristic Mapping
+Common invoice formats
+Keyword proximity:
+"Model:", "Invoice Date", "IMEI"
+🔴 Tier 3: AI Fallback (structure only in Sprint 5)
+LLM parsing interface (no heavy integration yet)
+interface AiParser {
+    ExtractionResult parse(String rawText);
 }
-```
+🔴 3. Confidence Scoring Engine
+Objective
 
----
+Every extraction must produce:
 
-## 🧠 Worker Design
+confidenceScore (0 → 1)
+Rules
 
-* Spring @Scheduled job
-* Runs every 3–5 seconds
-* Picks jobs:
+Example:
 
-```sql id="7g7m2f"
-SELECT * FROM extraction_jobs
-WHERE status = 'PENDING'
-ORDER BY created_at
-LIMIT 5
-FOR UPDATE SKIP LOCKED
-```
+Field	Rule
+productName	keyword match → +0.3
+dates	regex match → +0.2
+brand match	known brand → +0.2
+structure consistency	+0.3
+Implementation
+double calculateConfidence(ExtractionResult result)
+Thresholds
+Score	Action
+> 0.8	Auto-create
+0.5–0.8	Create + mark "needs review" (future)
+< 0.5	FAIL job
+🔴 4. Validation Layer
+Objective
 
----
+Ensure extracted data is safe before persistence
 
-### Processing Steps
+Rules
+purchaseDate ≤ today
+warrantyEnd ≥ warrantyStart
+productName not null
+Output
+Valid → continue
+Invalid → FAIL job
+🔴 5. Ingestion Pipeline Integration
+Update flow
 
-1. Mark job → PROCESSING
-2. Fetch RawDocument
-3. Run OCR (stub)
-4. Run parsing (stub)
-5. Create:
+Inside processJob(jobId):
 
-   * Device (if new)
-   * Warranty (if found)
-6. Mark job → COMPLETED
+1. markProcessing()
+2. OCR → rawText
+3. parse → ExtractionResult
+4. confidence scoring
+5. validation
+6. createDeviceIngestion()
+7. createWarranty()
+8. finalizeJob()
+Failure Cases
+Stage	Action
+OCR fails	retry
+Parsing fails	retry
+Low confidence	FAILED
+🔴 6. Database Changes
+V16 Migration
 
----
+Add to extraction_jobs:
 
-### Failure Handling
+ALTER TABLE extraction_jobs ADD COLUMN raw_text TEXT;
+ALTER TABLE extraction_jobs ADD COLUMN confidence_score DOUBLE PRECISION;
+🔴 7. Observability (IMPORTANT)
+Logging
 
-* Catch exception
-* Increment retry_count
-* Store error_message
-* Retry or mark FAILED
+Log at each stage:
 
----
-
-## 🧪 Testing
-
-### Required Tests
-
-* Upload creates job
-* Worker picks job
-* Job transitions correctly
-* Failed job retries
-* Completed job creates device/warranty
-* Multi-tenancy enforced
-
----
-
-## ⚠️ Constraints
-
-* No processing inside API
-* All jobs must include household_id
-* Worker must be idempotent
-* No duplicate device creation (basic check)
-* Follow AGENTS.md strictly
-
----
-
-## 🏁 Exit Criteria
-
-* Upload API works
-* Jobs created correctly
-* Worker processes jobs
-* Status updates correctly
-* Data saved in DB
-* Tests pass
-* No cross-tenant leakage
-
----
-
-## 🚀 Outcome
-
-Keepr can now:
-
-* Accept real-world documents
-* Process them asynchronously
-* Convert unstructured data → structured system
-
-This is the first step toward an intelligent system.
+OCR completed
+Parsing completed
+Confidence score
+Validation result
+🔴 8. Testing
+Integration Tests
+New Tests
+OCR → parsing → entity creation flow
+Low confidence → job FAILED
+Invalid date → validation failure
+Partial extraction → still works
+🚫 Explicit Non-Goals
+No UI changes
+No human review system (Sprint 6)
+No real AI provider integration (only interface)
+✅ Definition of Done
+OCR pipeline working (stub + pluggable)
+Parsing engine functional (regex + heuristics)
+Confidence scoring implemented
+Validation enforced
+Jobs correctly succeed/fail
+Integration tests passing

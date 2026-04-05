@@ -24,7 +24,7 @@ public class ExtractionWorker {
     private final IngestionProcessingService ingestionProcessingService;
 
     private static final int BATCH_SIZE = 5;
-    private static final int STALE_THRESHOLD_MINUTES = 5;
+    private static final int STALE_THRESHOLD_MINUTES = 30;
 
     /**
      * Main background processing loop.
@@ -37,8 +37,8 @@ public class ExtractionWorker {
         OffsetDateTime now = OffsetDateTime.now();
         List<ExtractionJob> jobs = extractionJobRepository.findPendingJobsForUpdate(
                 BATCH_SIZE, 
-                now.minusSeconds(30),
-                now.minusMinutes(2)
+                now.minusSeconds(getBackoffSeconds(1)),
+                now.minusSeconds(getBackoffSeconds(2))
         );
 
         if (jobs.isEmpty()) {
@@ -49,10 +49,12 @@ public class ExtractionWorker {
 
         for (ExtractionJob job : jobs) {
             try {
+                log.info("Processing job={} retry={}", job.getId(), job.getRetryCount());
                 // Orchestration handles its own internal REQUIRES_NEW transactions
                 ingestionProcessingService.processJob(job.getId());
             } catch (Exception e) {
-                log.error("Failed to process extraction job ID={}: {}", job.getId(), e.getMessage(), e);
+                log.error("Failed to process extraction job ID={} retry={}: {}", 
+                        job.getId(), job.getRetryCount(), e.getMessage(), e);
                 // Isolation: do not re-throw, continue with the next job in the batch.
                 // IngestionFailureService handled the persistent status update.
             }
@@ -71,7 +73,16 @@ public class ExtractionWorker {
         int resetCount = extractionJobRepository.resetStaleJobs(threshold, OffsetDateTime.now());
         
         if (resetCount > 0) {
-            log.warn("Recovered {} stale processing jobs", resetCount);
+            log.warn("Recovered {} stale processing jobs (older than {} mins)", resetCount, STALE_THRESHOLD_MINUTES);
         }
+    }
+
+    private long getBackoffSeconds(int retryCount) {
+        return switch (retryCount) {
+            case 1 -> 5;
+            case 2 -> 25;
+            case 3 -> 125;
+            default -> 125;
+        };
     }
 }

@@ -5,7 +5,7 @@ This document serves as an exhaustive replication guide for the Sprint 4 Async I
 ---
 
 ## 🏗️ 1. Database Schema (DDL)
-Run these Flyway-compatible migrations (`V13-V15`) to establish the ingestion foundation.
+Run these Flyway-compatible migrations (`V13-V15`, fixed in `V19`) to establish the ingestion foundation.
 
 ```sql
 -- 1. Ingestion Tables
@@ -14,7 +14,7 @@ CREATE TABLE raw_documents (
     household_id UUID NOT NULL REFERENCES households(id),
     file_name VARCHAR(255) NOT NULL,
     file_url VARCHAR(512) NOT NULL,
-    file_type VARCHAR(50) NOT NULL,
+    file_type VARCHAR(50) NOT NULL, -- Canonical MIME type (e.g., application/pdf)
     uploaded_by UUID NOT NULL REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     deleted_at TIMESTAMP WITH TIME ZONE
@@ -27,6 +27,8 @@ CREATE TABLE extraction_jobs (
     status VARCHAR(50) NOT NULL, -- PENDING, PROCESSING, COMPLETED, FAILED
     retry_count INT NOT NULL DEFAULT 0,
     error_message TEXT,
+    failure_reason VARCHAR(100), -- machine-readable code (e.g. LOW_CONFIDENCE)
+    extraction_version INT NOT NULL DEFAULT 1,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
     deleted_at TIMESTAMP WITH TIME ZONE
@@ -35,12 +37,31 @@ CREATE TABLE extraction_jobs (
 -- 2. Performance & Tenancy Indices
 CREATE INDEX idx_extraction_jobs_status_created ON extraction_jobs (status, created_at) WHERE deleted_at IS NULL;
 CREATE INDEX idx_raw_documents_household ON raw_documents (household_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_raw_documents_household_uploaded_by ON raw_documents(household_id, uploaded_by);
+-- Fixed in V19: Added soft-delete predicate
+CREATE INDEX idx_raw_documents_household_uploaded_by ON raw_documents(household_id, uploaded_by) WHERE deleted_at IS NULL;
 ```
 
 ---
 
-## 🛠️ 2. Dependencies & Configuration
+## 🌐 2. API Endpoints
+The following endpoints define the external contract for document ingestion.
+
+### POST `/documents/upload`
+- **Purpose**: Upload a document and initialize the async pipeline.
+- **Request**: `MultipartFile file`
+- **Response**: `202 Accepted` with `ExtractionJobResponse` (job_id, status).
+- **Constraints**: 
+  - Validates MIME type from prefix.
+  - Enforces `keepr.upload.max-file-size` (10MB).
+
+### GET `/documents/status/{jobId}`
+- **Purpose**: Poll for the status of an extraction job.
+- **Response**: `200 OK` with `ExtractionJobResponse`.
+- **Security**: Must verify `household_id` of the authenticated user matches the job.
+
+---
+
+## 🛠️ 3. Dependencies & Configuration
 Add the following to `pom.xml` for server-side MIME detection:
 
 ```xml
@@ -53,54 +74,58 @@ Add the following to `pom.xml` for server-side MIME detection:
 
 **Required Properties (`application.yml`):**
 ```yaml
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
 keepr:
   upload:
     dir: ${UPLOADS_PATH:/tmp/keepr/uploads}
+    max-file-size: 10MB
 ```
 
 ---
 
-## ⚙️ 3. Core Component Implementation
+## ⚙️ 4. Core Component Implementation
 
 ### A. The Ingestion Flow (Orchestration)
 The system uses a **3-Phase Transactional Lifecycle** to prevent DB connection pool exhaustion.
 
 1.  **Marking (`markProcessing`)**: 
     - **Transaction**: `@Transactional(propagation = Propagation.REQUIRES_NEW)`
-    - **Logic**: Fetch the job by ID, verify it's not already `PROCESSING`, update status and commit immediately.
+    - **Logic**: Fetch job, verify not `PROCESSING`, update status, commit.
 2.  **Processing (OCR/Parsing)**:
-    - **Transaction**: **NONE** (Run in non-transactional method).
-    - **Logic**: Perform long-running I/O (Tesseract/Parsing/FileSystem). Releasing DB connections here prevents pool starvation.
+    - **Transaction**: **NONE**.
+    - **Logic**: Long-running I/O (OCR/Parsing). Releases DB connections.
 3.  **Finalizing (`finalizeJob`)**:
     - **Transaction**: `@Transactional(propagation = Propagation.REQUIRES_NEW)`
-    - **Logic**: Persist domain entities (Devices/Warranties) and mark job as `COMPLETED`.
+    - **Logic**: Persist domain entities and mark `COMPLETED`.
 
 ### B. Background Worker (`ExtractionWorker`)
 - **Schedule**: `@Scheduled(fixedDelay = 5000)`
-- **Query**: `findPendingJobsForUpdate` using `FOR UPDATE SKIP LOCKED` for high-concurrency safety.
-- **handoff**: Passes `UUID jobId` to the processing service to avoid passing stale JPA entities across transaction boundaries.
+- **Query**: `findPendingJobsForUpdate` with `FOR UPDATE SKIP LOCKED`.
+- **Retry Logic**: Implements programmable exponential backoff (5s, 25s, 125s).
+- **Stale Recovery**: A scheduled task resets jobs stuck in `PROCESSING` longer than **30 minutes**.
 
 ### C. Security Layer (`FileStorageService`)
-- Detect MIME from first **16KB bytes** using `tika.detect(BufferedInputStream)`.
-- Use `mark()` and `reset()` to ensure the stream is reusable.
-- **Whitelist**: Rejects everything except `application/pdf`, `image/jpeg`, and `image/png`.
-
-### D. Domain Modeling: Physical vs Generic
-- **`DeviceService.createDevice`**: Manual creation always returns a **new instance**.
-- **`DeviceService.createDeviceIngestion`**: Ingestion uses normalized `name+brand+model+household` checks for idempotency.
+- Detect MIME from first **16KB bytes**.
+- **Whitelist**: `application/pdf`, `image/jpeg`, `image/png`.
+- **Fail-Fast**: Validate file size on the first line of `store()`.
 
 ---
 
-## 🔄 4. Resiliency Details
+## 🔄 5. Resiliency Details
 - **Max Retries**: Exactly `3`.
-- **Failure Logic**: `handleFailure(UUID jobId, Exception e)` must load a fresh entity in a `REQUIRES_NEW` transaction to avoid locking/deadlock issues.
-- **Normalization**: Use `v.toLowerCase(Locale.ROOT)` in all deduplication logic.
+- **Exponential Backoff**: Thresholds calculated as `5 * Math.pow(5, retryLevel)`.
+- **Failure Logic**: `handleFailure` must load a fresh entity in `REQUIRES_NEW`.
+- **Normalization**: Use `v.toLowerCase(Locale.ROOT)` for all deduplication comparisons.
 
 ---
 
-## 🧪 5. Testing Requirements
-A replica is not complete without these exact test scenarios:
-1.  **MIME Spoofing**: Attempt to upload a `.sh` script renamed as `.pdf`; must be rejected with `400 Bad Request`.
-2.  **Transaction Rollback**: If `ExtractionJob` creation fails, verify the `RawDocument` file is not orphaned.
-3.  **Batch Drainage**: Run the `ExtractionWorker` against multiple concurrent uploads; verify zero duplicate devices are created.
-4.  **Recursive Cleanup**: Integration tests must clear `users`, `households`, `devices`, and `warranties` in correct FK order during `@BeforeEach`.
+## 🧪 6. Testing Requirements
+1.  **MIME Spoofing**: Attempt to upload a `.sh` script renamed as `.pdf`; must be rejected.
+2.  **Early Rejection**: Upload >10MB file; verify immediate `400` failure.
+3.  **Zombie Recovery**: Manually set a job to `PROCESSING` with old `updated_at`; verify recovery task resets it.
+4.  **Batch Drainage**: Multiple concurrent uploads; verify zero duplicate creation.
