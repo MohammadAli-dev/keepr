@@ -10,7 +10,10 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -59,9 +62,9 @@ public class ExtractionJob {
 
     private Double confidenceScore;
 
-    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
-    private java.util.Map<String, Object> extractionJson;
+    private Map<String, Object> extractionJson;
 
     /**
      * A structured, machine-readable classification of the failure (e.g., LOW_CONFIDENCE,
@@ -72,9 +75,9 @@ public class ExtractionJob {
     @Column(nullable = false)
     private int extractionVersion = 1;
 
-    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
-    private java.util.Map<String, Double> confidenceBreakdown;
+    private Map<String, Double> confidenceBreakdown;
 
     private Integer ocrMs;
     private Integer parseMs;

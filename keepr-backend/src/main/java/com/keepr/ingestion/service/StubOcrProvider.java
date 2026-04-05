@@ -1,12 +1,14 @@
 package com.keepr.ingestion.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
  * Default OCR provider that returns a mock payload.
  * Used for development and testing.
  */
+@Profile({"local", "test"})
 @Component
 @Slf4j
 public class StubOcrProvider implements OcrProvider {

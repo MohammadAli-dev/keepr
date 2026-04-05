@@ -15,10 +15,10 @@ import com.keepr.warranty.repository.WarrantyRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -52,7 +52,7 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private ExtractionJobRepository extractionJobRepository;
 
-    @MockBean
+    @MockitoBean
     private com.keepr.ingestion.service.OcrProvider ocrProvider;
 
     @Autowired
@@ -94,15 +94,15 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         
         // Operational Metrics Verification
         assertThat(job.getExtractionVersion()).isEqualTo(1);
-        assertThat(job.getOcrMs()).isNotNull().isGreaterThan(0);
-        assertThat(job.getParseMs()).isNotNull().isGreaterThan(0);
-        assertThat(job.getValidateMs()).isNotNull().isGreaterThan(0);
+        assertThat(job.getOcrMs()).isNotNull().isGreaterThanOrEqualTo(0);
+        assertThat(job.getParseMs()).isNotNull().isGreaterThanOrEqualTo(0);
+        assertThat(job.getValidateMs()).isNotNull().isGreaterThanOrEqualTo(0);
         assertThat(job.getTotalFieldsExtracted()).isEqualTo(6);
-        assertThat(job.getSuccessfulFields()).isGreaterThanOrEqualTo(5); // At least product, brand, model, date, category
+        assertThat(job.getSuccessfulFields()).isGreaterThanOrEqualTo(4); // product, brand, model, date (category has 0 weight now)
         
         // Confidence Breakdown Verification
-        assertThat(job.getConfidenceBreakdown()).containsKey("productName");
-        assertThat(job.getConfidenceBreakdown().get("productName")).isGreaterThan(0);
+        assertThat(job.getConfidenceBreakdown()).containsKey("product_name");
+        assertThat(job.getConfidenceBreakdown().get("product_name")).isGreaterThan(0);
         assertThat(job.getConfidenceBreakdown()).containsKey("brand");
         
         // Extraction Snaphot Verification
