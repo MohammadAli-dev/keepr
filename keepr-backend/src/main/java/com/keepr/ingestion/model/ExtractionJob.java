@@ -49,6 +49,30 @@ public class ExtractionJob {
     private OffsetDateTime updatedAt;
 
     private OffsetDateTime deletedAt;
+    
+    @Column(columnDefinition = "TEXT")
+    private String rawText;
+
+    private Double confidenceScore;
+
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private java.util.Map<String, Object> extractionJson;
+
+    private String failureReason;
+
+    @Column(nullable = false)
+    private int extractionVersion = 1;
+
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private java.util.Map<String, Double> confidenceBreakdown;
+
+    private Integer ocrMs;
+    private Integer parseMs;
+    private Integer validateMs;
+    private Integer totalFieldsExtracted;
+    private Integer successfulFields;
 
     @PrePersist
     protected void onCreate() {

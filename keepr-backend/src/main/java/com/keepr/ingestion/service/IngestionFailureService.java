@@ -55,7 +55,12 @@ public class IngestionFailureService {
         job.setErrorMessage(e.getMessage());
         job.setUpdatedAt(OffsetDateTime.now());
 
-        if (newRetryCount >= MAX_RETRIES) {
+        if (e instanceof com.keepr.ingestion.exception.ExtractionException ex) {
+            job.setFailureReason(ex.getFailureReason());
+            log.error("Job {} failed due to validation error: {}. Marking as FAILED.", jobId, ex.getFailureReason());
+            job.setStatus(JobStatus.FAILED);
+            cleanupFile(job);
+        } else if (newRetryCount >= MAX_RETRIES) {
             log.error("Job {} reached max retries (3). Marking as FAILED.", jobId);
             job.setStatus(JobStatus.FAILED);
             
