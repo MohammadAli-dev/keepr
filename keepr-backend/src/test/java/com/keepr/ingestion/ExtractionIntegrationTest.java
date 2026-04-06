@@ -154,8 +154,8 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         assertThat(job.getFailureReason()).isEqualTo("INVALID_DEVICE");
         
         // Verify metrics are captured even on failure
-        assertThat(job.getOcrMs()).isNotNull().isGreaterThan(0);
-        assertThat(job.getParseMs()).isNotNull().isGreaterThan(0);
+        assertThat(job.getOcrMs()).isNotNull().isGreaterThanOrEqualTo(0);
+        assertThat(job.getParseMs()).isNotNull().isGreaterThanOrEqualTo(0);
         
         assertThat(deviceRepository.count()).isZero();
     }

@@ -85,7 +85,7 @@ public class ExtractionWorker {
 
     private long getBackoffSeconds(int retryCount) {
         return switch (retryCount) {
-            case 0 -> 5;
+            case 0 -> 0;
             case 1 -> 5;
             case 2 -> 25;
             case 3 -> 125;

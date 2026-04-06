@@ -118,11 +118,11 @@ public class IngestionProcessingService {
         } catch (ExtractionException e) {
             status = e.getFailureReason();
             log.error("Extraction validation failed: jobId={}, reason={}, message={}", jobId, status, e.getMessage());
-            ingestionFailureService.handleFailure(jobId, e);
+            ingestionFailureService.handleFailure(jobId, e, (int) ocrMs, (int) parseMs, (int) validateMs);
         } catch (Exception e) {
             status = "SYSTEM_ERROR";
             log.error("Job processing failed unexpectedly: jobId={}", jobId, e);
-            ingestionFailureService.handleFailure(jobId, e);
+            ingestionFailureService.handleFailure(jobId, e, (int) ocrMs, (int) parseMs, (int) validateMs);
         } finally {
             long totalDuration = System.currentTimeMillis() - totalStartTime;
             log.info("[METRICS] jobId={} version=1 confidence={} status={} " 

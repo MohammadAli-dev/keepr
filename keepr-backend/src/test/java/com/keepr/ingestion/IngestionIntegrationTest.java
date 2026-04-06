@@ -53,7 +53,7 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private RawDocumentRepository rawDocumentRepository;
 
-    @Autowired
+    @SpyBean
     private ExtractionJobRepository extractionJobRepository;
 
     @SpyBean
@@ -78,7 +78,7 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
                 "file",
                 "invoice.pdf",
                 MediaType.APPLICATION_PDF_VALUE,
-                "dummy content".getBytes()
+                "%PDF-1.4 dummy content".getBytes()
         );
 
         mockMvc.perform(multipart("/api/v1/documents/upload")
@@ -157,7 +157,7 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
         extractionJobRepository.saveAndFlush(job);
 
         // Try to trigger failure handling
-        ingestionFailureService.handleFailure(jobId, new RuntimeException("Late error"));
+        ingestionFailureService.handleFailure(jobId, new RuntimeException("Late error"), 0, 0, 0);
 
         // Verify it's STILL COMPLETED (idempotency guard worked)
         var updatedJob = extractionJobRepository.findById(jobId).orElseThrow();
@@ -183,7 +183,7 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
         extractionJobRepository.saveAndFlush(job);
 
         // Trigger 3rd failure
-        ingestionFailureService.handleFailure(jobId, new RuntimeException("Final fail"));
+        ingestionFailureService.handleFailure(jobId, new RuntimeException("Final fail"), 100, 50, 10);
 
         // Verify it transitioned to FAILED
         var finalJob = extractionJobRepository.findById(jobId).orElseThrow();
