@@ -32,22 +32,30 @@ public class ExtractionWorker {
      */
     @Scheduled(fixedDelay = 5000)
     public void pollAndProcess() {
-        log.info("Polling for extraction jobs...");
+        log.debug("Polling for extraction jobs...");
         
         OffsetDateTime now = OffsetDateTime.now();
-        List<ExtractionJob> jobs = extractionJobRepository.findPendingJobsForUpdate(
-                BATCH_SIZE, 
-                now.minusSeconds(getBackoffSeconds(1)),
-                now.minusSeconds(getBackoffSeconds(2))
-        );
+        List<ExtractionJob> jobs = extractionJobRepository.findPendingJobsForUpdate(BATCH_SIZE);
 
         if (jobs.isEmpty()) {
             return;
         }
 
-        log.info("Picked up {} jobs for processing", jobs.size());
+        // Apply per-job backoff filtering in Java
+        List<ExtractionJob> eligible = jobs.stream()
+                .filter(job -> {
+                    long delay = getBackoffSeconds(job.getRetryCount());
+                    return job.getUpdatedAt().isBefore(now.minusSeconds(delay));
+                })
+                .toList();
 
-        for (ExtractionJob job : jobs) {
+        if (eligible.isEmpty()) {
+            return;
+        }
+
+        log.info("Picked up {} eligible jobs for processing (from {} candidates)", eligible.size(), jobs.size());
+
+        for (ExtractionJob job : eligible) {
             try {
                 log.info("Processing job={} retry={}", job.getId(), job.getRetryCount());
                 // Orchestration handles its own internal REQUIRES_NEW transactions
@@ -55,15 +63,13 @@ public class ExtractionWorker {
             } catch (Exception e) {
                 log.error("Failed to process extraction job ID={} retry={}: {}", 
                         job.getId(), job.getRetryCount(), e.getMessage(), e);
-                // Isolation: do not re-throw, continue with the next job in the batch.
-                // IngestionFailureService handled the persistent status update.
             }
         }
     }
 
     /**
      * Zombie Job Recovery.
-     * Searches for jobs stuck in PROCESSING for more than 5 minutes and resets them to PENDING.
+     * Searches for jobs stuck in PROCESSING for more than 30 minutes and resets them to PENDING.
      * Runs every 60 seconds.
      */
     @Scheduled(fixedDelay = 60000)
@@ -79,6 +85,7 @@ public class ExtractionWorker {
 
     private long getBackoffSeconds(int retryCount) {
         return switch (retryCount) {
+            case 0 -> 5;
             case 1 -> 5;
             case 2 -> 25;
             case 3 -> 125;

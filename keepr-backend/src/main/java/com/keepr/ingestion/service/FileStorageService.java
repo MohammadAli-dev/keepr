@@ -32,6 +32,8 @@ public class FileStorageService {
     @Value("${keepr.upload.max-file-size:10MB}")
     private String maxFileSizeStr;
 
+    private long maxFileSizeBytes;
+
     private final Tika tika = new Tika();
 
     private static final int MIME_SNIFF_THRESHOLD = 16384; // 16KB
@@ -42,7 +44,7 @@ public class FileStorageService {
     );
 
     /**
-     * Validates upload directory at startup.
+     * Validates upload directory and configuration at startup.
      */
     @PostConstruct
     public void init() {
@@ -55,6 +57,18 @@ public class FileStorageService {
             log.info("File storage initialized at: {}", path.toAbsolutePath());
         } catch (IOException e) {
             log.error("Failed to initialize upload directory: {}", uploadDir, e);
+        }
+
+        try {
+            this.maxFileSizeBytes = parseSize(maxFileSizeStr);
+            if (this.maxFileSizeBytes <= 0) {
+                throw new IllegalArgumentException("Upload size limit must be positive: " + maxFileSizeStr);
+            }
+            log.info("File upload limit initialized: {} ({} bytes)", maxFileSizeStr, maxFileSizeBytes);
+        } catch (Exception e) {
+            log.error("CRITICAL: Failed to parse upload size limit configuration '{}' (key: keepr.upload.max-file-size): {}", 
+                    maxFileSizeStr, e.getMessage());
+            throw new IllegalArgumentException("Invalid file upload size configuration", e);
         }
     }
 
@@ -136,22 +150,28 @@ public class FileStorageService {
     }
 
     private void validateSize(MultipartFile file) {
-        long maxSizeBytes = parseSize(maxFileSizeStr);
-        if (file.getSize() > maxSizeBytes) {
-            log.warn("Rejected upload: size={} bytes exceeds max={} for file={}", 
-                    file.getSize(), maxSizeBytes, file.getOriginalFilename());
+        if (file.getSize() > maxFileSizeBytes) {
+            log.warn("Rejected upload: size={} bytes exceeds max={} bytes for file={}", 
+                    file.getSize(), maxFileSizeBytes, file.getOriginalFilename());
             throw new KeeprException(ErrorCode.BAD_REQUEST, "File too large: maximum size is " + maxFileSizeStr);
         }
     }
 
     private long parseSize(String sizeStr) {
-        String s = sizeStr.toUpperCase().trim();
-        if (s.endsWith("MB")) {
-            return Long.parseLong(s.substring(0, s.length() - 2)) * 1024 * 1024;
-        } else if (s.endsWith("KB")) {
-            return Long.parseLong(s.substring(0, s.length() - 2)) * 1024;
+        if (sizeStr == null || sizeStr.isBlank()) {
+            throw new IllegalArgumentException("Size configuration string cannot be null or empty");
         }
-        return Long.parseLong(s);
+        String s = sizeStr.toUpperCase().trim();
+        try {
+            if (s.endsWith("MB")) {
+                return Long.parseLong(s.substring(0, s.length() - 2).trim()) * 1024 * 1024;
+            } else if (s.endsWith("KB")) {
+                return Long.parseLong(s.substring(0, s.length() - 2).trim()) * 1024;
+            }
+            return Long.parseLong(s);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Failed to parse size configuration: " + sizeStr, e);
+        }
     }
 
     private String getSafeExtension(String contentType) {

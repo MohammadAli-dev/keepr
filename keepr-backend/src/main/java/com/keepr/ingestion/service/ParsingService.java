@@ -47,7 +47,7 @@ public class ParsingService {
      * Parses OCR text into a structured ExtractionResult.
      *
      * @param rawText the raw text from OCR
-     * @return structured ExtractionResult containing parsed fields and segments
+     * @return structured ExtractionResult containing parsed fields
      */
     public ExtractionResult parse(String rawText) {
         if (rawText == null || rawText.trim().isEmpty()) {
