@@ -2,7 +2,7 @@
 description: Automatically update README.md to reflect recent features, updates, fixes, and architectural improvements.
 ---
 
-1. Analyze the current codebase and project status files (e.g., `README.md`, `SPRINT.md`, `SPRINT5.md`).
+1. Analyze the current codebase and project status files (e.g., `README.md`, `SPRINT.md`, and the latest `SPRINT[N].md`).
 2. Review the diff of all changes made during the latest sprint or since the last commit (`git diff HEAD~1` or similar).
 3. Enhance the `README.md` to reflect the latest state:
     - Update the **"Current Product State"** section to reflect newly working features.
