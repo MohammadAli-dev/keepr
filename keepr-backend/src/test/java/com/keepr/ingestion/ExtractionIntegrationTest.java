@@ -98,8 +98,8 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         assertThat(job.getOcrMs()).isNotNull().isGreaterThanOrEqualTo(0);
         assertThat(job.getParseMs()).isNotNull().isGreaterThanOrEqualTo(0);
         assertThat(job.getValidateMs()).isNotNull().isGreaterThanOrEqualTo(0);
-        assertThat(job.getTotalFieldsExtracted()).isEqualTo(6);
-        assertThat(job.getSuccessfulFields()).isGreaterThanOrEqualTo(4); // product, brand, model, date (category has 0 weight now)
+        assertThat(job.getTotalFieldsExtracted()).isEqualTo(8);
+        assertThat(job.getSuccessfulFields()).isEqualTo(7); // product, brand, model, date, wStart, wEnd, wType
         
         // Confidence Breakdown Verification
         assertThat(job.getConfidenceBreakdown()).containsKey("product_name");

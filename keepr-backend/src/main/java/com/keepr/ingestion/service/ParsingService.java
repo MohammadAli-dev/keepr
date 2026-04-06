@@ -41,7 +41,10 @@ public class ParsingService {
             LocalDate warrantyStart,
             LocalDate warrantyEnd,
             String warrantyType
-    ) {}
+    ) {
+        // IMPORTANT: Update FIELD_COUNT when adding/removing fields
+        public static final int FIELD_COUNT = 8;
+    }
 
     /**
      * Parses OCR text into a structured ExtractionResult.

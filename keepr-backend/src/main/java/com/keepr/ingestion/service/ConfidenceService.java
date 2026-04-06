@@ -70,19 +70,22 @@ public class ConfidenceService {
         breakdown.put(CONF_WARRANTY_END, warrantyEndScore);
         totalScore += warrantyEndScore;
 
-        // Calculate metrics based on the breakdown
+        // Calculate metrics explicitly based on extraction result
         int successful = 0;
-        for (Double score : breakdown.values()) {
-            if (score > 0) {
-                successful++;
-            }
-        }
+        if (result.productName() != null && !result.productName().isBlank()) successful++;
+        if (result.brand() != null && !result.brand().isBlank()) successful++;
+        if (result.model() != null && !result.model().isBlank()) successful++;
+        if (result.category() != null && !result.category().isBlank()) successful++;
+        if (result.purchaseDate() != null) successful++;
+        if (result.warrantyStart() != null) successful++;
+        if (result.warrantyEnd() != null) successful++;
+        if (result.warrantyType() != null && !result.warrantyType().isBlank()) successful++;
 
         return new ConfidenceResult(
                 Math.min(1.0, totalScore),
                 breakdown,
                 successful,
-                breakdown.size()
+                ParsingService.ExtractionResult.FIELD_COUNT
         );
     }
 }
