@@ -66,7 +66,8 @@ public class FileStorageService {
             }
             log.info("File upload limit initialized: {} ({} bytes)", maxFileSizeStr, maxFileSizeBytes);
         } catch (Exception e) {
-            log.error("CRITICAL: Failed to parse upload size limit configuration '{}' (key: keepr.upload.max-file-size): {}", 
+            log.error("CRITICAL: Failed to parse upload size limit configuration '{}' " 
+                            + "(key: keepr.upload.max-file-size): {}", 
                     maxFileSizeStr, e.getMessage());
             throw new IllegalArgumentException("Invalid file upload size configuration", e);
         }

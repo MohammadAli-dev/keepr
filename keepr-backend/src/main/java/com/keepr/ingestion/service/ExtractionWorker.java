@@ -4,6 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import com.keepr.ingestion.model.ExtractionJob;
+import com.keepr.ingestion.model.JobStatus;
 import com.keepr.ingestion.repository.ExtractionJobRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,32 +29,19 @@ public class ExtractionWorker {
 
     /**
      * Main background processing loop.
-     * Polls for PENDING jobs every 5 seconds using FOR UPDATE SKIP LOCKED.
+     * Claims jobs in a short transaction, then processes them outside.
      */
     @Scheduled(fixedDelay = 5000)
     public void pollAndProcess() {
         log.debug("Polling for extraction jobs...");
         
-        OffsetDateTime now = OffsetDateTime.now();
-        List<ExtractionJob> jobs = extractionJobRepository.findPendingJobsForUpdate(BATCH_SIZE);
-
-        if (jobs.isEmpty()) {
-            return;
-        }
-
-        // Apply per-job backoff filtering in Java
-        List<ExtractionJob> eligible = jobs.stream()
-                .filter(job -> {
-                    long delay = getBackoffSeconds(job.getRetryCount());
-                    return job.getUpdatedAt().isBefore(now.minusSeconds(delay));
-                })
-                .toList();
+        List<ExtractionJob> eligible = claimJobs();
 
         if (eligible.isEmpty()) {
             return;
         }
 
-        log.info("Picked up {} eligible jobs for processing (from {} candidates)", eligible.size(), jobs.size());
+        log.info("Picked up {} eligible jobs for processing", eligible.size());
 
         for (ExtractionJob job : eligible) {
             try {
@@ -65,6 +53,33 @@ public class ExtractionWorker {
                         job.getId(), job.getRetryCount(), e.getMessage(), e);
             }
         }
+    }
+
+    /**
+     * Claims PENDING jobs and marks them as PROCESSING in a single transaction.
+     * This ensures the SKIP LOCKED locks are held until the status update is committed.
+     */
+    @Transactional
+    public List<ExtractionJob> claimJobs() {
+        OffsetDateTime now = OffsetDateTime.now();
+        List<ExtractionJob> jobs = extractionJobRepository.findPendingJobsForUpdate(BATCH_SIZE);
+
+        if (jobs.isEmpty()) {
+            return List.of();
+        }
+
+        // Apply per-job backoff filtering and transition status
+        return jobs.stream()
+                .filter(job -> {
+                    long delay = getBackoffSeconds(job.getRetryCount());
+                    return job.getUpdatedAt().isBefore(now.minusSeconds(delay));
+                })
+                .map(job -> {
+                    job.setStatus(JobStatus.PROCESSING);
+                    job.setUpdatedAt(now);
+                    return extractionJobRepository.save(job);
+                })
+                .toList();
     }
 
     /**

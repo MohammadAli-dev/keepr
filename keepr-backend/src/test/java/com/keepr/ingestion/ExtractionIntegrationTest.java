@@ -106,7 +106,7 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         assertThat(job.getConfidenceBreakdown().get("product_name")).isGreaterThan(0);
         assertThat(job.getConfidenceBreakdown()).containsKey("brand");
         
-        // Extraction Snaphot Verification
+        // Extraction Snapshot Verification
         assertThat(job.getExtractionJson()).isNotEmpty();
         assertThat(job.getExtractionJson().get("productName")).isEqualTo("MacBook Pro");
         assertThat(job.getFailureReason()).isNull();

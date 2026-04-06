@@ -72,14 +72,30 @@ public class ConfidenceService {
 
         // Calculate metrics explicitly based on extraction result
         int successful = 0;
-        if (result.productName() != null && !result.productName().isBlank()) successful++;
-        if (result.brand() != null && !result.brand().isBlank()) successful++;
-        if (result.model() != null && !result.model().isBlank()) successful++;
-        if (result.category() != null && !result.category().isBlank()) successful++;
-        if (result.purchaseDate() != null) successful++;
-        if (result.warrantyStart() != null) successful++;
-        if (result.warrantyEnd() != null) successful++;
-        if (result.warrantyType() != null && !result.warrantyType().isBlank()) successful++;
+        if (result.productName() != null && !result.productName().isBlank()) {
+            successful++;
+        }
+        if (result.brand() != null && !result.brand().isBlank()) {
+            successful++;
+        }
+        if (result.model() != null && !result.model().isBlank()) {
+            successful++;
+        }
+        if (result.category() != null && !result.category().isBlank()) {
+            successful++;
+        }
+        if (result.purchaseDate() != null) {
+            successful++;
+        }
+        if (result.warrantyStart() != null) {
+            successful++;
+        }
+        if (result.warrantyEnd() != null) {
+            successful++;
+        }
+        if (result.warrantyType() != null && !result.warrantyType().isBlank()) {
+            successful++;
+        }
 
         return new ConfidenceResult(
                 Math.min(1.0, totalScore),

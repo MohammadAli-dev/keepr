@@ -135,12 +135,16 @@ public class IngestionProcessingService {
      * Transitions a job to PROCESSING status and commits immediately.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public ExtractionJob markProcessing(UUID jobId) {
-        ExtractionJob job = extractionJobRepository.findById(jobId)
+    public ExtractionJob markProcessing(java.util.UUID jobId) {
+        ExtractionJob job = extractionJobRepository.findById(java.util.Objects.requireNonNull(jobId))
                 .orElseThrow(() -> new KeeprException(ErrorCode.NOT_FOUND, "Job not found"));
         
         if (job.getStatus() == JobStatus.PROCESSING) {
             return job;
+        }
+
+        if (job.getStatus() != JobStatus.PENDING) {
+            throw new KeeprException(ErrorCode.CONFLICT, "Job is not in PENDING state");
         }
 
         job.setStatus(JobStatus.PROCESSING);

@@ -23,11 +23,15 @@ public class ParsingService {
     private static final Pattern BRAND_PATTERN = Pattern.compile("Brand:\\s*(.*)", Pattern.CASE_INSENSITIVE);
     private static final Pattern MODEL_PATTERN = Pattern.compile("Model:\\s*(.*)", Pattern.CASE_INSENSITIVE);
     private static final Pattern CATEGORY_PATTERN = Pattern.compile("Category:\\s*(.*)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern WARRANTY_TYPE_PATTERN = Pattern.compile("Warranty Type:\\s*(.*)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern WARRANTY_TYPE_PATTERN = 
+            Pattern.compile("Warranty Type:\\s*(.*)", Pattern.CASE_INSENSITIVE);
     
-    private static final Pattern PURCHASE_DATE_PATTERN = Pattern.compile("Purchase Date:\\s*(\\d{4}-\\d{2}-\\d{2})", Pattern.CASE_INSENSITIVE);
-    private static final Pattern WARRANTY_START_PATTERN = Pattern.compile("Warranty Start:\\s*(\\d{4}-\\d{2}-\\d{2})", Pattern.CASE_INSENSITIVE);
-    private static final Pattern WARRANTY_END_PATTERN = Pattern.compile("Warranty End:\\s*(\\d{4}-\\d{2}-\\d{2})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PURCHASE_DATE_PATTERN = 
+            Pattern.compile("Purchase Date:\\s*(\\d{4}-\\d{2}-\\d{2})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern WARRANTY_START_PATTERN = 
+            Pattern.compile("Warranty Start:\\s*(\\d{4}-\\d{2}-\\d{2})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern WARRANTY_END_PATTERN = 
+            Pattern.compile("Warranty End:\\s*(\\d{4}-\\d{2}-\\d{2})", Pattern.CASE_INSENSITIVE);
 
     /**
      * Pure domain record for extraction results, decoupled from API DTOs.
@@ -53,7 +57,7 @@ public class ParsingService {
      * @return structured ExtractionResult containing parsed fields
      */
     public ExtractionResult parse(String rawText) {
-        if (rawText == null || rawText.trim().isEmpty()) {
+        if (rawText == null || rawText.isBlank()) {
             throw new ExtractionException("EMPTY_OCR_TEXT", "OCR returned empty or null text");
         }
         
@@ -81,7 +85,8 @@ public class ParsingService {
     private String extract(String text, Pattern pattern) {
         Matcher matcher = pattern.matcher(text);
         if (matcher.find()) {
-            return matcher.group(1).trim();
+            String val = matcher.group(1).trim();
+            return val.isEmpty() ? null : val;
         }
         return null;
     }
@@ -105,6 +110,7 @@ public class ParsingService {
      * @return a map of extraction fields
      */
     public Map<String, Object> toMap(ExtractionResult result) {
+        java.util.Objects.requireNonNull(result, "ExtractionResult must not be null");
         Map<String, Object> map = new HashMap<>();
         map.put("productName", result.productName());
         map.put("brand", result.brand());
