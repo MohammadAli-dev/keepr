@@ -2,6 +2,7 @@ package com.keepr.ingestion;
 
 
 import java.util.UUID;
+import static java.util.Objects.requireNonNull;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keepr.AbstractIntegrationTest;
@@ -87,7 +88,7 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         UUID jobId = uploadTestFile(token);
         extractionWorker.pollAndProcess();
 
-        ExtractionJob job = extractionJobRepository.findById(jobId).orElseThrow();
+        ExtractionJob job = extractionJobRepository.findById(requireNonNull(jobId)).orElseThrow();
         assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
         assertThat(job.getConfidenceScore()).isGreaterThanOrEqualTo(0.5);
         assertThat(job.getRawText()).contains("MacBook Pro");
@@ -130,7 +131,7 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         UUID jobId = uploadTestFile(token);
         extractionWorker.pollAndProcess();
 
-        ExtractionJob job = extractionJobRepository.findById(jobId).orElseThrow();
+        ExtractionJob job = extractionJobRepository.findById(requireNonNull(jobId)).orElseThrow();
         assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
         assertThat(job.getExtractionJson()).isNotEmpty();
         assertThat(job.getFailureReason()).isNull();
@@ -148,7 +149,7 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         UUID jobId = uploadTestFile(token);
         extractionWorker.pollAndProcess();
 
-        ExtractionJob job = extractionJobRepository.findById(jobId).orElseThrow();
+        ExtractionJob job = extractionJobRepository.findById(requireNonNull(jobId)).orElseThrow();
         assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
         assertThat(job.getErrorMessage()).contains("Low extraction confidence");
         assertThat(job.getFailureReason()).isEqualTo("INVALID_DEVICE");
@@ -172,7 +173,7 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         UUID jobId = uploadTestFile(token);
         extractionWorker.pollAndProcess();
 
-        ExtractionJob job = extractionJobRepository.findById(jobId).orElseThrow();
+        ExtractionJob job = extractionJobRepository.findById(requireNonNull(jobId)).orElseThrow();
         assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
         assertThat(job.getErrorMessage()).contains("Missing mandatory field: productName");
         assertThat(job.getFailureReason()).isEqualTo("INVALID_DEVICE");
@@ -194,24 +195,24 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
     }
 
     private String obtainJwt(String phoneNumber) throws Exception {
-        mockMvc.perform(post("/auth/send-otp")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"phoneNumber\": \"" + phoneNumber + "\"}"));
+        mockMvc.perform(post(requireNonNull("/auth/send-otp"))
+                .contentType(requireNonNull(MediaType.APPLICATION_JSON))
+                .content(requireNonNull(String.format("{\"phoneNumber\": \"%s\"}", phoneNumber))));
 
-        String code = jdbcTemplate.queryForObject(
+        String code = requireNonNull(jdbcTemplate.queryForObject(
                 "SELECT otp_code FROM auth_otp WHERE phone_number = ? ORDER BY expires_at DESC LIMIT 1",
-                String.class, phoneNumber);
+                String.class, phoneNumber));
 
-        MvcResult verifyResult = mockMvc.perform(post("/auth/verify-otp")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(String.format("{\"phoneNumber\": \"%s\", \"otpCode\": \"%s\"}", phoneNumber, code)))
+        MvcResult verifyResult = mockMvc.perform(post(requireNonNull("/auth/verify-otp"))
+                .contentType(requireNonNull(MediaType.APPLICATION_JSON))
+                .content(requireNonNull(String.format("{\"phoneNumber\": \"%s\", \"otpCode\": \"%s\"}", phoneNumber, code))))
                 .andReturn();
 
-        return objectMapper.readTree(verifyResult.getResponse().getContentAsString()).get("accessToken").asText();
+        return requireNonNull(objectMapper.readTree(verifyResult.getResponse().getContentAsString()).get("accessToken")).asText();
     }
 
     // Helper to avoid static import conflicts
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder post(String url) {
-        return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(url);
+        return requireNonNull(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(requireNonNull(url)));
     }
 }
