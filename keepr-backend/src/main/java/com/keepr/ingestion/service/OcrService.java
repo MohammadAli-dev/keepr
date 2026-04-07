@@ -10,20 +10,20 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class OcrService {
 
-    private static final String MOCK_OCR_PAYLOAD = 
-            "MOCK INVOICE TEXT: Device: MacBook Pro, Brand: Apple, Model: M3 Max, " +
-            "Warranty Start: 2024-01-01, Warranty End: 2025-01-01, Type: MANUFACTURER";
+    private final OcrProvider ocrProvider;
+
+    public OcrService(OcrProvider ocrProvider) {
+        this.ocrProvider = ocrProvider;
+    }
 
     /**
-     * Simulates extracting text from a file.
+     * Extracts text from a document by delegating to the configured provider.
      *
-     * @param fileUrl path to the document
-     * @return dummy extracted text
+     * @param fileUrl path or URL to the document
+     * @return the extracted raw text
      */
     public String extractText(String fileUrl) {
-        String safeUrl = fileUrl != null ? fileUrl.split("\\?")[0] : "unknown";
-        log.info("Simulating OCR for file: {}", safeUrl);
-        // In a real scenario, this would call AWS Textract or Google Vision
-        return MOCK_OCR_PAYLOAD;
+        log.info("Extracting document text via OCR provider...");
+        return ocrProvider.extractText(fileUrl);
     }
 }

@@ -4,6 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import com.keepr.ingestion.model.ExtractionJob;
+import com.keepr.ingestion.model.JobStatus;
 import com.keepr.ingestion.repository.ExtractionJobRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,44 +25,66 @@ public class ExtractionWorker {
     private final IngestionProcessingService ingestionProcessingService;
 
     private static final int BATCH_SIZE = 5;
-    private static final int STALE_THRESHOLD_MINUTES = 5;
+    private static final int STALE_THRESHOLD_MINUTES = 30;
 
     /**
      * Main background processing loop.
-     * Polls for PENDING jobs every 5 seconds using FOR UPDATE SKIP LOCKED.
+     * Claims jobs in a short transaction, then processes them outside.
      */
     @Scheduled(fixedDelay = 5000)
     public void pollAndProcess() {
-        log.info("Polling for extraction jobs...");
+        log.debug("Polling for extraction jobs...");
         
-        OffsetDateTime now = OffsetDateTime.now();
-        List<ExtractionJob> jobs = extractionJobRepository.findPendingJobsForUpdate(
-                BATCH_SIZE, 
-                now.minusSeconds(30),
-                now.minusMinutes(2)
-        );
+        List<ExtractionJob> eligible = claimJobs();
 
-        if (jobs.isEmpty()) {
+        if (eligible.isEmpty()) {
             return;
         }
 
-        log.info("Picked up {} jobs for processing", jobs.size());
+        log.info("Picked up {} eligible jobs for processing", eligible.size());
 
-        for (ExtractionJob job : jobs) {
+        for (ExtractionJob job : eligible) {
             try {
+                log.info("Processing job={} retry={}", job.getId(), job.getRetryCount());
                 // Orchestration handles its own internal REQUIRES_NEW transactions
                 ingestionProcessingService.processJob(job.getId());
             } catch (Exception e) {
-                log.error("Failed to process extraction job ID={}: {}", job.getId(), e.getMessage(), e);
-                // Isolation: do not re-throw, continue with the next job in the batch.
-                // IngestionFailureService handled the persistent status update.
+                log.error("Failed to process extraction job ID={} retry={}: {}", 
+                        job.getId(), job.getRetryCount(), e.getMessage(), e);
             }
         }
     }
 
     /**
+     * Claims PENDING jobs and marks them as PROCESSING in a single transaction.
+     * This ensures the SKIP LOCKED locks are held until the status update is committed.
+     */
+    @Transactional
+    public List<ExtractionJob> claimJobs() {
+        OffsetDateTime now = OffsetDateTime.now();
+        List<ExtractionJob> jobs = extractionJobRepository.findPendingJobsForUpdate(BATCH_SIZE);
+
+        if (jobs.isEmpty()) {
+            return List.of();
+        }
+
+        // Apply per-job backoff filtering and transition status
+        return jobs.stream()
+                .filter(job -> {
+                    long delay = getBackoffSeconds(job.getRetryCount());
+                    return job.getUpdatedAt().isBefore(now.minusSeconds(delay));
+                })
+                .map(job -> {
+                    job.setStatus(JobStatus.PROCESSING);
+                    job.setUpdatedAt(now);
+                    return extractionJobRepository.save(job);
+                })
+                .toList();
+    }
+
+    /**
      * Zombie Job Recovery.
-     * Searches for jobs stuck in PROCESSING for more than 5 minutes and resets them to PENDING.
+     * Searches for jobs stuck in PROCESSING for more than 30 minutes and resets them to PENDING.
      * Runs every 60 seconds.
      */
     @Scheduled(fixedDelay = 60000)
@@ -71,7 +94,17 @@ public class ExtractionWorker {
         int resetCount = extractionJobRepository.resetStaleJobs(threshold, OffsetDateTime.now());
         
         if (resetCount > 0) {
-            log.warn("Recovered {} stale processing jobs", resetCount);
+            log.warn("Recovered {} stale processing jobs (older than {} mins)", resetCount, STALE_THRESHOLD_MINUTES);
         }
+    }
+
+    private long getBackoffSeconds(int retryCount) {
+        return switch (retryCount) {
+            case 0 -> 0;
+            case 1 -> 5;
+            case 2 -> 25;
+            case 3 -> 125;
+            default -> 125;
+        };
     }
 }

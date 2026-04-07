@@ -29,19 +29,11 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
             SELECT * FROM extraction_jobs 
             WHERE status = 'PENDING' 
             AND deleted_at IS NULL
-            AND (
-                (retry_count = 0) OR 
-                (retry_count = 1 AND updated_at < :retry1Threshold) OR 
-                (retry_count = 2 AND updated_at < :retry2Threshold)
-            )
             ORDER BY created_at ASC 
             LIMIT :limit 
             FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
-    List<ExtractionJob> findPendingJobsForUpdate(
-            @Param("limit") int limit, 
-            @Param("retry1Threshold") OffsetDateTime retry1Threshold,
-            @Param("retry2Threshold") OffsetDateTime retry2Threshold);
+    List<ExtractionJob> findPendingJobsForUpdate(@Param("limit") int limit);
 
     int MAX_RETRIES = 3;
 

@@ -21,7 +21,10 @@ public enum ErrorCode {
     FORBIDDEN("KEEPR-403", "Forbidden"),
 
     /** A duplicate resource already exists. */
-    DUPLICATE("KEEPR-409", "Duplicate resource");
+    DUPLICATE("KEEPR-409", "Duplicate resource"),
+
+    /** The request conflicts with the current state of the server. */
+    CONFLICT("KEEPR-409-S", "Conflict with current state");
 
     private final String code;
     private final String defaultMessage;

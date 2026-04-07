@@ -1,54 +1,125 @@
 package com.keepr.ingestion.service;
 
 import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import com.keepr.device.dto.CreateDeviceRequest;
-import com.keepr.warranty.dto.CreateWarrantyRequest;
+import com.keepr.ingestion.exception.ExtractionException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * Stub service simulating the parsing of raw OCR text into structured objects.
+ * Service for parsing raw OCR text into structured extraction results.
+ * Uses regex and heuristic matching to identify key document fields.
  */
 @Service
 @Slf4j
 public class ParsingService {
+    
+    // Precompiled Pattern Constants to avoid magic strings
+    private static final Pattern DEVICE_PATTERN = Pattern.compile("Device:\\s*(.*)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern BRAND_PATTERN = Pattern.compile("Brand:\\s*(.*)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern MODEL_PATTERN = Pattern.compile("Model:\\s*(.*)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CATEGORY_PATTERN = Pattern.compile("Category:\\s*(.*)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern WARRANTY_TYPE_PATTERN = 
+            Pattern.compile("Warranty Type:\\s*(.*)", Pattern.CASE_INSENSITIVE);
+    
+    private static final Pattern PURCHASE_DATE_PATTERN = 
+            Pattern.compile("Purchase Date:\\s*(\\d{4}-\\d{2}-\\d{2})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern WARRANTY_START_PATTERN = 
+            Pattern.compile("Warranty Start:\\s*(\\d{4}-\\d{2}-\\d{2})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern WARRANTY_END_PATTERN = 
+            Pattern.compile("Warranty End:\\s*(\\d{4}-\\d{2}-\\d{2})", Pattern.CASE_INSENSITIVE);
 
     /**
-     * Data object for holding extraction results.
+     * Pure domain record for extraction results, decoupled from API DTOs.
      */
     public record ExtractionResult(
-            CreateDeviceRequest deviceRequest,
-            CreateWarrantyRequest warrantyRequest
-    ) {}
+            String productName,
+            String brand,
+            String model,
+            String category,
+            LocalDate purchaseDate,
+            LocalDate warrantyStart,
+            LocalDate warrantyEnd,
+            String warrantyType
+    ) {
+        // IMPORTANT: Update FIELD_COUNT when adding/removing fields
+        public static final int FIELD_COUNT = 8;
+    }
 
     /**
-     * Parses OCR text into stubbed device and warranty data.
+     * Parses OCR text into a structured ExtractionResult.
      *
-     * @param ocrText raw text extracted from OCR
-     * @return structured ExtractionResult
+     * @param rawText the raw text from OCR
+     * @return structured ExtractionResult containing parsed fields
      */
-    public ExtractionResult parse(String ocrText) {
-        log.info("Parsing OCR text...");
+    public ExtractionResult parse(String rawText) {
+        if (rawText == null || rawText.isBlank()) {
+            throw new ExtractionException("EMPTY_OCR_TEXT", "OCR returned empty or null text");
+        }
+        
+        log.info("Starting rule-based parsing of OCR text...");
 
-        // In a real scenario, this would use LLM or regex to find fields
-        // For Sprint 4, we use a predictable stub.
+        String productName = extract(rawText, DEVICE_PATTERN);
+        String brand = extract(rawText, BRAND_PATTERN);
+        String model = extract(rawText, MODEL_PATTERN);
+        String category = extract(rawText, CATEGORY_PATTERN);
+        String warrantyType = extract(rawText, WARRANTY_TYPE_PATTERN);
+        
+        LocalDate purchaseDate = parseDate(extract(rawText, PURCHASE_DATE_PATTERN));
+        LocalDate warrantyStart = parseDate(extract(rawText, WARRANTY_START_PATTERN));
+        LocalDate warrantyEnd = parseDate(extract(rawText, WARRANTY_END_PATTERN));
 
-        CreateDeviceRequest deviceRequest = new CreateDeviceRequest(
-                "MacBook Pro",
-                "Apple",
-                "M3 Max",
-                "LAPTOP",
-                LocalDate.of(2024, 1, 1)
+        ExtractionResult result = new ExtractionResult(
+                productName, brand, model, category, 
+                purchaseDate, warrantyStart, warrantyEnd, warrantyType
         );
 
-        CreateWarrantyRequest warrantyRequest = new CreateWarrantyRequest(
-                null, // Device ID will be filled later after device creation
-                "MANUFACTURER",
-                LocalDate.of(2024, 1, 1),
-                LocalDate.of(2025, 1, 1)
-        );
+        log.info("Parsing complete. Extracted: {}", productName);
+        return result;
+    }
 
-        return new ExtractionResult(deviceRequest, warrantyRequest);
+    private String extract(String text, Pattern pattern) {
+        Matcher matcher = pattern.matcher(text);
+        if (matcher.find()) {
+            String val = matcher.group(1).trim();
+            return val.isEmpty() ? null : val;
+        }
+        return null;
+    }
+
+    private LocalDate parseDate(String dateStr) {
+        if (dateStr == null) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(dateStr);
+        } catch (java.time.format.DateTimeParseException e) {
+            log.warn("Failed to parse date: {}", dateStr, e);
+            return null;
+        }
+    }
+
+    /**
+     * Converts an ExtractionResult into a Map for JSON serialization.
+     *
+     * @param result the result to convert
+     * @return a map of extraction fields
+     */
+    public Map<String, Object> toMap(ExtractionResult result) {
+        java.util.Objects.requireNonNull(result, "ExtractionResult must not be null");
+        Map<String, Object> map = new HashMap<>();
+        map.put("productName", result.productName());
+        map.put("brand", result.brand());
+        map.put("model", result.model());
+        map.put("category", result.category());
+        map.put("purchaseDate", result.purchaseDate());
+        map.put("warrantyStart", result.warrantyStart());
+        map.put("warrantyEnd", result.warrantyEnd());
+        map.put("warrantyType", result.warrantyType());
+        return map;
     }
 }

@@ -1,7 +1,7 @@
 package com.keepr.ingestion;
 
-import java.time.LocalDate;
 import java.util.UUID;
+import static java.util.Objects.requireNonNull;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,7 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.annotation.DirtiesContext;
@@ -53,10 +53,10 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private RawDocumentRepository rawDocumentRepository;
 
-    @Autowired
+    @MockitoSpyBean
     private ExtractionJobRepository extractionJobRepository;
 
-    @SpyBean
+    @MockitoSpyBean
     private com.keepr.ingestion.service.IngestionFailureService ingestionFailureService;
 
     @Autowired
@@ -78,7 +78,7 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
                 "file",
                 "invoice.pdf",
                 MediaType.APPLICATION_PDF_VALUE,
-                "dummy content".getBytes()
+                "%PDF-1.4 dummy content".getBytes()
         );
 
         mockMvc.perform(multipart("/api/v1/documents/upload")
@@ -112,6 +112,7 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void uploadDocument_transactionRollback_onJobFailure() throws Exception {
         String token = obtainJwt("9876543210");
         MockMultipartFile file = new MockMultipartFile(
@@ -149,18 +150,18 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
                 .header("Authorization", "Bearer " + token))
                 .andReturn();
         
-        UUID jobId = UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsString()).get("jobId").asText());
+        UUID jobId = UUID.fromString(requireNonNull(objectMapper.readTree(result.getResponse().getContentAsString()).get("jobId")).asText());
 
         // Mark as COMPLETED manually
-        var job = extractionJobRepository.findById(jobId).orElseThrow();
+        var job = extractionJobRepository.findById(requireNonNull(jobId)).orElseThrow();
         job.setStatus(com.keepr.ingestion.model.JobStatus.COMPLETED);
         extractionJobRepository.saveAndFlush(job);
 
         // Try to trigger failure handling
-        ingestionFailureService.handleFailure(jobId, new RuntimeException("Late error"));
+        ingestionFailureService.handleFailure(jobId, new RuntimeException("Late error"), 0, 0, 0);
 
         // Verify it's STILL COMPLETED (idempotency guard worked)
-        var updatedJob = extractionJobRepository.findById(jobId).orElseThrow();
+        var updatedJob = extractionJobRepository.findById(requireNonNull(jobId)).orElseThrow();
         assertThat(updatedJob.getStatus()).isEqualTo(com.keepr.ingestion.model.JobStatus.COMPLETED);
         assertThat(updatedJob.getRetryCount()).isZero();
     }
@@ -175,18 +176,18 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
                 .header("Authorization", "Bearer " + token))
                 .andReturn();
         
-        UUID jobId = UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsString()).get("jobId").asText());
+        UUID jobId = UUID.fromString(requireNonNull(objectMapper.readTree(result.getResponse().getContentAsString()).get("jobId")).asText());
 
         // Manually set retryCount to 2
-        var job = extractionJobRepository.findById(jobId).orElseThrow();
+        var job = extractionJobRepository.findById(requireNonNull(jobId)).orElseThrow();
         job.setRetryCount(2);
         extractionJobRepository.saveAndFlush(job);
 
         // Trigger 3rd failure
-        ingestionFailureService.handleFailure(jobId, new RuntimeException("Final fail"));
+        ingestionFailureService.handleFailure(jobId, new RuntimeException("Final fail"), 100, 50, 10);
 
         // Verify it transitioned to FAILED
-        var finalJob = extractionJobRepository.findById(jobId).orElseThrow();
+        var finalJob = extractionJobRepository.findById(requireNonNull(jobId)).orElseThrow();
         assertThat(finalJob.getStatus()).isEqualTo(com.keepr.ingestion.model.JobStatus.FAILED);
         assertThat(finalJob.getRetryCount()).isEqualTo(3);
     }
@@ -204,10 +205,10 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
                 .header("Authorization", "Bearer " + householdAToken))
                 .andReturn();
         
-        UUID jobId = UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsString()).get("jobId").asText());
+        UUID jobId = UUID.fromString(requireNonNull(objectMapper.readTree(result.getResponse().getContentAsString()).get("jobId")).asText());
 
         // Household A can see it
-        mockMvc.perform(get("/api/v1/documents/jobs/" + jobId)
+        mockMvc.perform(get(requireNonNull("/api/v1/documents/jobs/" + jobId))
                 .header("Authorization", "Bearer " + householdAToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.jobId").value(jobId.toString()));
@@ -229,13 +230,13 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
                 .header("Authorization", "Bearer " + token))
                 .andReturn();
 
-        UUID jobId = UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsString()).get("jobId").asText());
+        UUID jobId = UUID.fromString(requireNonNull(objectMapper.readTree(result.getResponse().getContentAsString()).get("jobId")).asText());
 
         // Manually trigger worker polling
         extractionWorker.pollAndProcess();
 
         // Verify status
-        mockMvc.perform(get("/api/v1/documents/jobs/" + jobId)
+        mockMvc.perform(get(requireNonNull("/api/v1/documents/jobs/" + jobId))
                 .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("COMPLETED"));
@@ -270,25 +271,24 @@ class IngestionIntegrationTest extends AbstractIntegrationTest {
 
     private String obtainJwt(String phoneNumber) throws Exception {
         // Step 1: Send OTP
-        mockMvc.perform(post("/auth/send-otp")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"phoneNumber\": \"" + phoneNumber + "\"}"))
+        mockMvc.perform(post(requireNonNull("/auth/send-otp"))
+                .contentType(requireNonNull(MediaType.APPLICATION_JSON))
+                .content(requireNonNull(String.format("{\"phoneNumber\": \"%s\"}", phoneNumber))))
                 .andExpect(status().isOk());
 
         // Get OTP from DB using JdbcTemplate
-        String code = jdbcTemplate.queryForObject(
+        String code = requireNonNull(jdbcTemplate.queryForObject(
                 "SELECT otp_code FROM auth_otp WHERE phone_number = ? ORDER BY expires_at DESC LIMIT 1",
-                String.class, phoneNumber);
-        assertThat(code).isNotNull();
+                String.class, phoneNumber));
 
         // Step 3: Verify OTP
-        MvcResult verifyResult = mockMvc.perform(post("/auth/verify-otp")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(String.format("{\"phoneNumber\": \"%s\", \"otpCode\": \"%s\"}", phoneNumber, code)))
+        MvcResult verifyResult = mockMvc.perform(post(requireNonNull("/auth/verify-otp"))
+                .contentType(requireNonNull(MediaType.APPLICATION_JSON))
+                .content(requireNonNull(String.format("{\"phoneNumber\": \"%s\", \"otpCode\": \"%s\"}", phoneNumber, code))))
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode responseNode = objectMapper.readTree(verifyResult.getResponse().getContentAsString());
-        return responseNode.get("accessToken").asText();
+        JsonNode responseNode = requireNonNull(objectMapper.readTree(verifyResult.getResponse().getContentAsString()));
+        return requireNonNull(responseNode.get("accessToken")).asText();
     }
 }

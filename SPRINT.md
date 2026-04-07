@@ -1,236 +1,240 @@
 # 📋 SPRINT.md — Project Keepr
 
-## Active Sprint: 4
-
-**Title:** Invoice Ingestion & Extraction (Async, DB-Queue Based)
+## Active Sprint: 6
+**Title:** Productization Layer — Human Review System
 **Status:** 🔄 In Progress
 
 ---
 
 ## 🎯 Goal
 
-Enable users to upload invoices/documents and process them asynchronously into structured data.
+Transform Keepr from a backend extraction engine into a usable, trustworthy
+product system. The extraction pipeline works but users have no visibility
+or control when extraction is wrong. This sprint introduces a human review
+loop for low-confidence extractions and user-facing APIs to see, correct,
+and confirm extracted data.
 
-This sprint introduces:
-
-* Document ingestion
-* Background processing
-* Basic extraction pipeline (stubbed OCR + parsing)
-
----
-
-## 🧠 Core Principle
-
-> Upload fast. Process later.
-
----
-
-## ⚙️ High-Level Flow
-
-Upload → Save Raw Document → Create Job → Return Response
-→ Background Worker → Process → Update Status
+After this sprint: extraction is not perfect — but it is always correctable.
+This is the first true product milestone.
 
 ---
 
 ## 📦 Scope
 
-### INCLUDED
+### What is IN this sprint
+- `ReviewTaskStatus` enum: `PENDING`, `COMPLETED`
+- `JobStatus` enum expanded: `REVIEW_REQUIRED`, `USER_CONFIRMED`
+- `ReviewTask` entity and Flyway migration
+- `ReviewService` with household-scoped task management
+- `ReviewController` with three endpoints
+- Pipeline update: low-confidence jobs route to review instead of failing
+- `ReviewIntegrationTest` covering the full review lifecycle
+- Structured logging at `[REVIEW_CREATED]` and `[REVIEW_CONFIRMED]` points
+- Configurable confidence threshold
 
-* RawDocument entity
-* ExtractionJob entity
-* Upload API
-* Background worker (DB queue)
-* Job state machine
-* Basic OCR + parsing (stub implementation)
-* Linking parsed data → Device/Warranty (basic)
-
----
-
-### EXCLUDED
-
-* Real OCR integration (use stub)
-* Gmail/WhatsApp sync
-* Advanced parsing logic
-* Notifications
-* Retry queues (basic retry only)
-
----
-
-## 🧱 Data Model
+### What is NOT in this sprint
+- Google Vision or any real OCR provider — `StubOcrProvider` remains the
+  only OCR implementation. Real OCR belongs in Sprint 7.
+- LLM integration
+- Any frontend or mobile work
+- WhatsApp or Gmail ingestion channels
+- Notification system for review tasks
+- Bulk or admin review tooling
 
 ---
 
-### 1. RawDocument
+## 🔐 Confidence Routing Rule
 
-```id="t3p9fa"
-id
-household_id
-file_name
-file_url
-file_type
-uploaded_by
-created_at
+The confidence threshold must be externalized — never hardcoded:
+
+```yaml
+keepr:
+  extraction:
+    review-confidence-threshold: 0.5
+```
+
+Injected as:
+```java
+@Value("${keepr.extraction.review-confidence-threshold:0.5}")
+private double reviewConfidenceThreshold;
+```
+
+Routing logic (additive — does not touch the existing success path):
+```
+if confidence < reviewConfidenceThreshold OR validation fails:
+    → createReviewTask()
+    → set job status = REVIEW_REQUIRED
+    → log [REVIEW_CREATED]
+    → return (do NOT call finalizeJob)
+
+if confidence >= reviewConfidenceThreshold AND validation passes:
+    → existing finalizeJob() call — UNCHANGED
+```
+
+The existing COMPLETED flow must not be modified in any way.
+
+---
+
+## 🗃️ New Database Table
+
+### V{N}__create_review_tasks.sql
+
+Before writing this migration, list all files in
+`src/main/resources/db/migration/` and identify the highest version number.
+Use N = that number + 1. Report the verified N in your plan output.
+
+```sql
+CREATE TABLE review_tasks (
+    id              UUID PRIMARY KEY,
+    job_id          UUID NOT NULL REFERENCES extraction_jobs(id),
+    household_id    UUID NOT NULL REFERENCES households(id),
+    raw_text        TEXT NOT NULL,
+    extraction_json JSONB NOT NULL,
+    status          VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+                      CHECK (status IN ('PENDING', 'COMPLETED')),
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_review_tasks_household_status
+    ON review_tasks(household_id, status)
+    WHERE status = 'PENDING';
+
+CREATE INDEX idx_review_tasks_job_id
+    ON review_tasks(job_id);
 ```
 
 ---
 
-### 2. ExtractionJob
+## extraction_json contract
 
-```id="j5o7df"
-id
-household_id
-raw_document_id
-status (PENDING, PROCESSING, COMPLETED, FAILED)
-retry_count
-error_message
-created_at
-updated_at
+The `extraction_json` column stores the direct JSON serialization of
+`ExtractionResult` from `ConfidenceService`. It must NOT be a custom
+structure invented for this sprint.
+
+Serialize using:
+```java
+String extractionJson = objectMapper.writeValueAsString(extractionResult);
 ```
 
+This ensures Sprint 7's LLM layer can consume the same shape without
+a migration or schema translation step.
+
+The field names and structure are whatever `ExtractionResult` currently
+produces — do not define a separate schema.
+
 ---
 
-## 🔄 Job State Machine
+## 📁 Files to Create / Modify
 
-```id="o0pfjq"
-PENDING → PROCESSING → COMPLETED
-                  ↓
-                FAILED
+```
+src/main/java/com/keepr/
+├── ingestion/
+│   ├── model/
+│   │   └── JobStatus.java                  ← MODIFY (add 2 values)
+│   └── service/
+│       └── IngestionProcessingService.java ← MODIFY (routing only)
+├── review/                                 ← NEW MODULE
+│   ├── controller/
+│   │   └── ReviewController.java
+│   ├── service/
+│   │   ├── ReviewService.java              ← interface
+│   │   └── impl/
+│   │       └── ReviewServiceImpl.java
+│   ├── repository/
+│   │   └── ReviewTaskRepository.java
+│   ├── model/
+│   │   ├── ReviewTask.java
+│   │   └── ReviewTaskStatus.java           ← enum
+│   └── dto/
+│       ├── ReviewTaskSummary.java          ← Record
+│       ├── ReviewTaskResponse.java         ← Record
+│       └── ConfirmReviewRequest.java       ← Record
+
+src/main/resources/
+├── application-local.yml                  ← MODIFY
+├── application-test.yml                   ← MODIFY
+└── db/migration/
+    └── V{N}__create_review_tasks.sql      ← NEW (verify N first)
+
+src/test/java/com/keepr/
+└── review/
+    └── ReviewIntegrationTest.java         ← NEW
 ```
 
----
-
-## 🔁 Retry Logic
-
-* Max retries: 3
-* On failure:
-
-  * Increment retry_count
-  * If retry_count < 3 → retry
-  * Else → mark FAILED
+No new Maven dependencies in this sprint.
 
 ---
 
-## 🌐 APIs
+## 🧱 Key Implementation Rules
 
----
-
-### 1. Upload Document
-
-POST /api/v1/documents/upload
-
-* Accept multipart file
-* Store file (local or S3 stub)
-* Create RawDocument
-* Create ExtractionJob (PENDING)
-
-Response:
-
-```json id="3k6fh2"
-{
-  "documentId": "UUID",
-  "jobId": "UUID",
-  "status": "PENDING"
+### ReviewTaskStatus enum
+```java
+public enum ReviewTaskStatus {
+    PENDING,
+    COMPLETED
 }
 ```
 
----
+Use `@Enumerated(EnumType.STRING)` on the entity field. This provides
+compiler safety and prevents typos that a bare `String status` would not catch.
 
-### 2. Get Job Status
+### confirmTask — Idempotency (critical)
 
-GET /api/v1/jobs/{jobId}
+The confirm flow MUST use the existing `DeviceService.createDevice()` path.
+Do NOT call `DeviceRepository` directly. Do NOT skip idempotency.
 
-Response:
+If a user double-confirms, the existing idempotency check
+(`findByNameAndBrandAndModelAndHouseholdId`) in `DeviceService` prevents
+a duplicate device. The second confirm call still receives a 409 because
+the `ReviewTask.status` will already be `COMPLETED` — both protections
+work together.
 
-```json id="8cl6jz"
-{
-  "jobId": "UUID",
-  "status": "PROCESSING",
-  "errorMessage": null
-}
+Confirm sequence (all steps in one `@Transactional` method):
+```
+1. findByIdAndHouseholdId → 404 if absent
+2. if status == COMPLETED → throw KeeprException(VALIDATION_ERROR,
+   "Review task already completed") → produces 400
+3. Validate request.device() is not null and name is not blank
+4. Call deviceService.createDevice(request.device(), householdId)
+5. If request.warranty() is not null: call warrantyService.createWarranty()
+6. task.setStatus(ReviewTaskStatus.COMPLETED), save
+7. Load ExtractionJob by task.jobId(), set status = USER_CONFIRMED, save
+8. log.info("[REVIEW_CONFIRMED] taskId={} householdId={}", taskId, householdId)
 ```
 
----
+### Pipeline change — additive only
 
-## 🧠 Worker Design
-
-* Spring @Scheduled job
-* Runs every 3–5 seconds
-* Picks jobs:
-
-```sql id="7g7m2f"
-SELECT * FROM extraction_jobs
-WHERE status = 'PENDING'
-ORDER BY created_at
-LIMIT 5
-FOR UPDATE SKIP LOCKED
-```
+The change to `IngestionProcessingService` must be a pure addition.
+The existing success path (`finalizeJob`) must not be touched.
+Only add the confidence check and early return before the existing call.
 
 ---
 
-### Processing Steps
+## ✅ Acceptance Criteria
 
-1. Mark job → PROCESSING
-2. Fetch RawDocument
-3. Run OCR (stub)
-4. Run parsing (stub)
-5. Create:
-
-   * Device (if new)
-   * Warranty (if found)
-6. Mark job → COMPLETED
-
----
-
-### Failure Handling
-
-* Catch exception
-* Increment retry_count
-* Store error_message
-* Retry or mark FAILED
-
----
-
-## 🧪 Testing
-
-### Required Tests
-
-* Upload creates job
-* Worker picks job
-* Job transitions correctly
-* Failed job retries
-* Completed job creates device/warranty
-* Multi-tenancy enforced
+- [ ] `JobStatus` has `REVIEW_REQUIRED` and `USER_CONFIRMED`
+- [ ] `ReviewTaskStatus` enum exists with `PENDING` and `COMPLETED`
+- [ ] Migration runs cleanly with verified version number
+- [ ] Both indexes on `review_tasks` are created
+- [ ] `extraction_json` is direct serialization of `ExtractionResult`
+- [ ] Confidence threshold injected via `@Value` — not hardcoded
+- [ ] No new Maven dependencies added
+- [ ] `GET /api/v1/review/tasks` returns only PENDING tasks for household
+- [ ] `GET /api/v1/review/tasks/{id}` returns 404 for wrong household
+- [ ] `POST /confirm` creates device using existing `DeviceService` idempotency
+- [ ] Double-confirm returns 400
+- [ ] `[REVIEW_CREATED]` and `[REVIEW_CONFIRMED]` log lines emitted
+- [ ] Existing COMPLETED pipeline flow unchanged — no regressions
+- [ ] All 8 `ReviewIntegrationTest` cases pass
+- [ ] All existing tests still pass
+- [ ] `./mvnw checkstyle:check` zero violations
+- [ ] No repository injected into any controller
 
 ---
 
-## ⚠️ Constraints
+## 🔗 Sprint 7 Dependency Note
 
-* No processing inside API
-* All jobs must include household_id
-* Worker must be idempotent
-* No duplicate device creation (basic check)
-* Follow AGENTS.md strictly
-
----
-
-## 🏁 Exit Criteria
-
-* Upload API works
-* Jobs created correctly
-* Worker processes jobs
-* Status updates correctly
-* Data saved in DB
-* Tests pass
-* No cross-tenant leakage
-
----
-
-## 🚀 Outcome
-
-Keepr can now:
-
-* Accept real-world documents
-* Process them asynchronously
-* Convert unstructured data → structured system
-
-This is the first step toward an intelligent system.
+Sprint 7 (LLM layer) will read `ReviewTask.extractionJson` to feed
+correction prompts. The schema produced in this sprint is load-bearing —
+do not change `ExtractionResult` structure between now and Sprint 7.
