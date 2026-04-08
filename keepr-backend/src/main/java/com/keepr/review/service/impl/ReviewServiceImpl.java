@@ -49,6 +49,7 @@ public class ReviewServiceImpl implements ReviewService {
         // Fast-path pre-check (non-blocking)
         var existing = reviewTaskRepository.findByHouseholdIdAndJobId(householdId, jobId);
         if (existing.isPresent()) {
+            log.info("[REVIEW_EXISTS_FAST] jobId={} householdId={}", jobId, householdId);
             return existing.get();
         }
 
@@ -64,7 +65,7 @@ public class ReviewServiceImpl implements ReviewService {
             log.info("[REVIEW_CREATED] jobId={} householdId={}", jobId, householdId);
             return savedTask;
         } catch (DataIntegrityViolationException e) {
-            log.warn("Duplicate review task detected for jobId={}, returning existing", jobId);
+            log.warn("[REVIEW_EXISTS_RACE] Duplicate review task detected via DB constraint for jobId={}, returning existing", jobId);
             return reviewTaskRepository.findByHouseholdIdAndJobId(householdId, jobId)
                     .orElseThrow(() -> new KeeprException(ErrorCode.INTERNAL_ERROR, "Failed to fetch duplicate review task"));
         }
