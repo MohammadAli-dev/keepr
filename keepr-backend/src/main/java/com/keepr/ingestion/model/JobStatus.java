@@ -32,5 +32,14 @@ public enum JobStatus {
     /**
      * User has successfully confirmed and completed the review task.
      */
-    USER_CONFIRMED
+    USER_CONFIRMED;
+
+    /**
+     * Checks if the current status is a terminal state (cannot be further processed by the worker).
+     *
+     * @return true if status is COMPLETED, FAILED, REVIEW_REQUIRED, or USER_CONFIRMED.
+     */
+    public boolean isTerminal() {
+        return this == COMPLETED || this == FAILED || this == REVIEW_REQUIRED || this == USER_CONFIRMED;
+    }
 }

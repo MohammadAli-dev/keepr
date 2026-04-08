@@ -12,8 +12,8 @@ Transform Keepr from a backend extraction engine into a usable, trustworthy prod
 
 ### 2. Ingestion Pipeline Routing (The "Brain")
 - Enhanced `IngestionProcessingService` to calculate confidence and validate results before finalizing.
-- Implemented **Automatic Routing**: If confidence < 0.5 or device validation fails, the job is moved to `REVIEW_REQUIRED` and a `ReviewTask` is generated.
-- Used `Propagation.REQUIRES_NEW` for status transitions to ensure atomic metadata persistence (metrics, raw text) even when the extraction fails validation.
+- Implemented **Automatic Routing**: If extraction confidence falls below the configured review threshold or device validation fails, the job is moved to `REVIEW_REQUIRED` and a `ReviewTask` is generated.
+- Used `Propagation.REQUIRES_NEW` for status transitions to ensure the **atomic commit of review state (status, metrics, snapshot) independent of the broader processing flow**, ensuring visibility even if parsing fails later.
 
 ### 3. Human Review APIs
 - **`GET /api/v1/review/tasks`**: List pending review tasks for the current household.

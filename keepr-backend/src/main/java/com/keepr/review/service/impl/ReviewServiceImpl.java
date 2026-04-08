@@ -14,7 +14,6 @@ import com.keepr.review.model.ReviewTaskStatus;
 import com.keepr.review.repository.ReviewTaskRepository;
 import com.keepr.review.service.ReviewService;
 import com.keepr.warranty.service.WarrantyService;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -47,6 +46,12 @@ public class ReviewServiceImpl implements ReviewService {
      */
     @Override
     public ReviewTask createReviewTask(UUID jobId, UUID householdId, String rawText, Map<String, Object> extractionJson) {
+        // Fast-path pre-check (non-blocking)
+        var existing = reviewTaskRepository.findByHouseholdIdAndJobId(householdId, jobId);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
         ReviewTask task = new ReviewTask();
         task.setJobId(jobId);
         task.setHouseholdId(householdId);
@@ -59,7 +64,7 @@ public class ReviewServiceImpl implements ReviewService {
             log.info("[REVIEW_CREATED] jobId={} householdId={}", jobId, householdId);
             return savedTask;
         } catch (DataIntegrityViolationException e) {
-            log.debug("Duplicate review task detected for jobId={}, returning existing", jobId);
+            log.warn("Duplicate review task detected for jobId={}, returning existing", jobId);
             return reviewTaskRepository.findByHouseholdIdAndJobId(householdId, jobId)
                     .orElseThrow(() -> new KeeprException(ErrorCode.INTERNAL_ERROR, "Failed to fetch duplicate review task"));
         }
@@ -150,7 +155,6 @@ public class ReviewServiceImpl implements ReviewService {
         ExtractionJob job = extractionJobRepository.findByIdAndHouseholdId(java.util.Objects.requireNonNull(task.getJobId()), householdId)
                 .orElseThrow(() -> new KeeprException(ErrorCode.NOT_FOUND, "Extraction job not found"));
         job.setStatus(JobStatus.USER_CONFIRMED);
-        job.setUpdatedAt(OffsetDateTime.now());
         extractionJobRepository.save(job);
 
         log.info("[REVIEW_CONFIRMED] taskId={} householdId={}", taskId, householdId);

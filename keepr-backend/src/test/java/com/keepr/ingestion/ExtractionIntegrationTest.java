@@ -2,6 +2,7 @@ package com.keepr.ingestion;
 
 
 import java.util.UUID;
+import java.time.LocalDate;
 import static java.util.Objects.requireNonNull;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -55,11 +56,11 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private ExtractionJobRepository extractionJobRepository;
 
-    @MockitoBean
-    private com.keepr.ingestion.service.OcrProvider ocrProvider;
-
     @Autowired
     private ReviewTaskRepository reviewTaskRepository;
+
+    @MockitoBean
+    private com.keepr.ingestion.service.OcrProvider ocrProvider;
 
     @Autowired
     private ExtractionWorker extractionWorker;
@@ -164,6 +165,11 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         assertThat(job.getOcrMs()).isNotNull().isGreaterThanOrEqualTo(0);
         assertThat(job.getParseMs()).isNotNull().isGreaterThanOrEqualTo(0);
         
+        // Verify Review Task created
+        var reviewTasks = reviewTaskRepository.findAll();
+        assertThat(reviewTasks).hasSize(1);
+        assertThat(reviewTasks.get(0).getJobId()).isEqualTo(jobId);
+
         assertThat(deviceRepository.count()).isZero();
     }
 
@@ -182,6 +188,10 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         ExtractionJob job = extractionJobRepository.findById(requireNonNull(jobId)).orElseThrow();
         assertThat(job.getStatus()).isEqualTo(JobStatus.REVIEW_REQUIRED);
         assertThat(job.getFailureReason()).isEqualTo("INVALID_DEVICE");
+
+        // Verify Review Task created
+        var reviewTasks = reviewTaskRepository.findAll();
+        assertThat(reviewTasks).isNotEmpty();
     }
 
     private void setupOcrMock(String text) {

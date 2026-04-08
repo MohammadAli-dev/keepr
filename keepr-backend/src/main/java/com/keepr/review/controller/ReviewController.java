@@ -8,6 +8,7 @@ import com.keepr.review.service.ReviewService;
 import java.util.List;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -67,7 +68,7 @@ public class ReviewController {
     @PostMapping("/tasks/{id}/confirm")
     public ResponseEntity<Void> confirmTask(
             @PathVariable UUID id,
-            @RequestBody ConfirmReviewRequest request,
+            @RequestBody @Valid ConfirmReviewRequest request,
             @AuthenticationPrincipal KeeprPrincipal principal) {
         log.info("Received review task confirmation request for task {} from household {}", id, principal.householdId());
         reviewService.confirmTask(id, principal.householdId(), request);

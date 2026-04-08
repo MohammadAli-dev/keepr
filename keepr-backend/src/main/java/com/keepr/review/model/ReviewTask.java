@@ -15,13 +15,11 @@ import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import lombok.extern.slf4j.Slf4j;
 
 @Entity
 @Table(name = "review_tasks")
 @Getter
 @Setter
-@Slf4j
 public class ReviewTask {
 
     @Id

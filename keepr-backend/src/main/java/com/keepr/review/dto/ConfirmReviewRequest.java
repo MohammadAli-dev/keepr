@@ -3,6 +3,8 @@ package com.keepr.review.dto;
 import com.keepr.device.dto.CreateDeviceRequest;
 import com.keepr.warranty.dto.CreateWarrantyRequest;
 
+import jakarta.validation.Valid;
+
 /**
  * DTO carrying device and warranty data for review confirmation.
  *
@@ -10,6 +12,6 @@ import com.keepr.warranty.dto.CreateWarrantyRequest;
  * @param warranty the optional corrected warranty information
  */
 public record ConfirmReviewRequest(
-        CreateDeviceRequest device,
-        CreateWarrantyRequest warranty
+        @Valid CreateDeviceRequest device,
+        @Valid CreateWarrantyRequest warranty
 ) {}

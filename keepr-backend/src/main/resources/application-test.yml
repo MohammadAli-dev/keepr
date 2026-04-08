@@ -18,4 +18,5 @@ keepr:
   jwt:
     secret: test-secret-key-must-be-at-least-32-characters-long-for-hmac
 
+  extraction:
     review-confidence-threshold: 0.5

@@ -73,6 +73,8 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    private static final String TEST_PHONE = "9000000005";
+
     private UUID householdId;
     private ExtractionJob testJob;
     private ReviewTask testTask;
@@ -80,9 +82,9 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        token = obtainJwt("9000000005");
+        token = obtainJwt(TEST_PHONE);
         
-        User user = userRepository.findByPhoneNumber("9000000005").orElseThrow();
+        User user = userRepository.findByPhoneNumber(TEST_PHONE).orElseThrow();
         householdId = jdbcTemplate.queryForObject(
                 "SELECT household_id FROM household_members WHERE user_id = ? LIMIT 1",
                 UUID.class, user.getId());
@@ -140,7 +142,7 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/v1/review/tasks/" + testTask.getId())
                 .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(Objects.requireNonNull(testTask.getId()).toString()))
+                .andExpect(jsonPath("$.id").value(testTask.getId().toString()))
                 .andExpect(jsonPath("$.rawText").value("raw text"))
                 .andExpect(jsonPath("$.extractionJson.productName").value("Test Product"));
     }
@@ -151,14 +153,15 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
         CreateWarrantyRequest warrantyReq = new CreateWarrantyRequest(null, "MANUFACTURER", LocalDate.now(), LocalDate.now().plusYears(1));
         ConfirmReviewRequest request = new ConfirmReviewRequest(deviceReq, warrantyReq);
 
-        mockMvc.perform(post(requireNonNull("/api/v1/review/tasks/" + testTask.getId() + "/confirm"))
+        mockMvc.perform(post("/api/v1/review/tasks/" + testTask.getId() + "/confirm")
                 .header("Authorization", "Bearer " + token)
-                .contentType(requireNonNull(MediaType.APPLICATION_JSON))
-                .content(requireNonNull(objectMapper.writeValueAsString(request))))
+                .contentType(java.util.Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                .content(java.util.Objects.requireNonNull(objectMapper.writeValueAsString(request))))
                 .andExpect(status().isOk());
 
         // Assert Task updated
-        ReviewTask taskInDb = reviewTaskRepository.findById(Objects.requireNonNull(testTask.getId())).orElseThrow();
+        ReviewTask taskInDb = reviewTaskRepository.findByHouseholdIdAndJobId(householdId, 
+                java.util.Objects.requireNonNull(testJob.getId())).orElseThrow();
         assertThat(taskInDb.getStatus()).isEqualTo(ReviewTaskStatus.COMPLETED);
 
         // Assert Job updated
@@ -176,6 +179,7 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
         // Assert Warranty Created
         var warranties = warrantyRepository.findAll();
         assertThat(warranties).hasSize(1);
+        assertThat(warranties.get(0).getDeviceId()).isEqualTo(device.getId());
     }
     
     @Test
@@ -186,10 +190,10 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
         CreateDeviceRequest deviceReq = new CreateDeviceRequest("Test Device", "Brand", null, "OTHER", null);
         ConfirmReviewRequest request = new ConfirmReviewRequest(deviceReq, null);
 
-        mockMvc.perform(post(requireNonNull("/api/v1/review/tasks/" + testTask.getId() + "/confirm"))
+        mockMvc.perform(post("/api/v1/review/tasks/" + testTask.getId() + "/confirm")
                 .header("Authorization", "Bearer " + token)
-                .contentType(requireNonNull(MediaType.APPLICATION_JSON))
-                .content(requireNonNull(objectMapper.writeValueAsString(request))))
+                .contentType(java.util.Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                .content(java.util.Objects.requireNonNull(objectMapper.writeValueAsString(request))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("Task already processed"));
     }
@@ -202,22 +206,22 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
     }
 
     private String obtainJwt(String phoneNumber) throws Exception {
-        mockMvc.perform(post(requireNonNull("/auth/send-otp"))
-                .contentType(requireNonNull(MediaType.APPLICATION_JSON))
-                .content(requireNonNull(String.format("{\"phoneNumber\": \"%s\"}", phoneNumber))))
+        mockMvc.perform(post("/auth/send-otp")
+                .contentType(java.util.Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                .content(java.util.Objects.requireNonNull(String.format("{\"phoneNumber\": \"%s\"}", phoneNumber))))
                 .andExpect(status().isOk());
 
         String code = requireNonNull(jdbcTemplate.queryForObject(
                 "SELECT otp_code FROM auth_otp WHERE phone_number = ? ORDER BY expires_at DESC LIMIT 1",
                 String.class, phoneNumber));
 
-        MvcResult verifyResult = mockMvc.perform(post(requireNonNull("/auth/verify-otp"))
-                .contentType(requireNonNull(MediaType.APPLICATION_JSON))
-                .content(requireNonNull(String.format("{\"phoneNumber\": \"%s\", \"otpCode\": \"%s\"}", phoneNumber, code))))
+        MvcResult verifyResult = mockMvc.perform(post("/auth/verify-otp")
+                .contentType(java.util.Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                .content(java.util.Objects.requireNonNull(String.format("{\"phoneNumber\": \"%s\", \"otpCode\": \"%s\"}", phoneNumber, code))))
                 .andExpect(status().isOk())
                 .andReturn();
 
-        var jsonNode = objectMapper.readTree(verifyResult.getResponse().getContentAsString()).get("accessToken");
+        var jsonNode = java.util.Objects.requireNonNull(objectMapper.readTree(verifyResult.getResponse().getContentAsString()).get("accessToken"));
         assertThat(jsonNode)
                 .withFailMessage("Expected 'accessToken' in the verify-otp response")
                 .isNotNull();

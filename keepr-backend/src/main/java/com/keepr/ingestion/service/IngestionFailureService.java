@@ -45,7 +45,7 @@ public class IngestionFailureService {
         }
 
         // Idempotency: skip if already terminal
-        if (job.getStatus() == JobStatus.COMPLETED || job.getStatus() == JobStatus.FAILED) {
+        if (job.getStatus().isTerminal()) {
             log.info("Job {} already in terminal state {}, skipping failure handling",
                     jobId, job.getStatus());
             return;
