@@ -12,7 +12,9 @@ import com.keepr.ingestion.model.JobStatus;
 import com.keepr.ingestion.repository.ExtractionJobRepository;
 import com.keepr.ingestion.repository.RawDocumentRepository;
 import com.keepr.ingestion.service.ExtractionWorker;
+import com.keepr.review.repository.ReviewTaskRepository;
 import com.keepr.warranty.repository.WarrantyRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,13 +59,18 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
     private com.keepr.ingestion.service.OcrProvider ocrProvider;
 
     @Autowired
+    private ReviewTaskRepository reviewTaskRepository;
+
+    @Autowired
     private ExtractionWorker extractionWorker;
 
     @Autowired
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @BeforeEach
+    @AfterEach
     void cleanDb() {
+        reviewTaskRepository.deleteAll();
         extractionJobRepository.deleteAll();
         rawDocumentRepository.deleteAll();
         warrantyRepository.deleteAll();
@@ -150,8 +157,7 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         extractionWorker.pollAndProcess();
 
         ExtractionJob job = extractionJobRepository.findById(requireNonNull(jobId)).orElseThrow();
-        assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
-        assertThat(job.getErrorMessage()).contains("Low extraction confidence");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.REVIEW_REQUIRED);
         assertThat(job.getFailureReason()).isEqualTo("INVALID_DEVICE");
         
         // Verify metrics are captured even on failure
@@ -174,8 +180,7 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         extractionWorker.pollAndProcess();
 
         ExtractionJob job = extractionJobRepository.findById(requireNonNull(jobId)).orElseThrow();
-        assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
-        assertThat(job.getErrorMessage()).contains("Missing mandatory field: productName");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.REVIEW_REQUIRED);
         assertThat(job.getFailureReason()).isEqualTo("INVALID_DEVICE");
     }
 

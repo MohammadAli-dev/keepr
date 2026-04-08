@@ -9,3 +9,5 @@ spring:
     redis:
       host: localhost
       port: 6379
+
+    review-confidence-threshold: 0.5
