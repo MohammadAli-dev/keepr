@@ -50,8 +50,20 @@ public class ReviewTask {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
-    public ReviewTask() {}
+    /**
+ * Creates a new ReviewTask instance.
+ *
+ * <p>Fields required for persistence (id, status, createdAt, updatedAt) are initialized by JPA lifecycle
+ * callbacks when the entity is persisted or updated.</p>
+ */
+public ReviewTask() {}
 
+    /**
+     * Initialize identity, timestamps, and default status before the entity is first persisted.
+     *
+     * If `id` is unset, assigns a new random UUID. Sets `createdAt` and `updatedAt` to the current
+     * time. If `status` is unset, sets it to `ReviewTaskStatus.PENDING`.
+     */
     @PrePersist
     protected void onCreate() {
         if (id == null) {
@@ -64,6 +76,11 @@ public class ReviewTask {
         }
     }
 
+    /**
+     * Sets the entity's `updatedAt` timestamp to the current time before an update.
+     *
+     * Invoked by the JPA provider as a `@PreUpdate` lifecycle callback to record when the entity was modified.
+     */
     @PreUpdate
     protected void onUpdate() {
         updatedAt = OffsetDateTime.now();

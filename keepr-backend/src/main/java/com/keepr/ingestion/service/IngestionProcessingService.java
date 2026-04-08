@@ -132,6 +132,14 @@ public class IngestionProcessingService {
         }
     }
 
+    /**
+     * Transition the specified extraction job to PROCESSING and persist the update.
+     *
+     * @param jobId the UUID of the extraction job to mark as processing
+     * @return the updated {@link ExtractionJob} after persisting the status and timestamp
+     * @throws KeeprException with {@link ErrorCode#NOT_FOUND} if no job exists for the given id
+     * @throws KeeprException with {@link ErrorCode#CONFLICT} if the job's current status is not PENDING or PROCESSING
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ExtractionJob markProcessing(UUID jobId) {
         ExtractionJob job = extractionJobRepository.findById(Objects.requireNonNull(jobId))
@@ -146,6 +154,22 @@ public class IngestionProcessingService {
         return extractionJobRepository.saveAndFlush(job);
     }
 
+    /**
+     * Marks the extraction job as requiring human review, persists extraction and confidence details, and creates a review task.
+     *
+     * <p>Updates the job's status to REVIEW_REQUIRED, stores raw text, extraction JSON, confidence metrics, timing and field counts,
+     * and then enqueues a review task via the review service.</p>
+     *
+     * @param jobId the identifier of the extraction job to update
+     * @param result the parsed extraction result to persist as extraction JSON
+     * @param confResult the confidence calculation result used to populate score, breakdown, and field counts
+     * @param rawText the OCR-extracted text associated with the job
+     * @param ocrMs elapsed time spent in OCR in milliseconds
+     * @param parseMs elapsed time spent in parsing in milliseconds
+     * @param validateMs elapsed time spent in validation in milliseconds
+     * @param failureReason a short code or message indicating why the job was routed to review (e.g., "LOW_CONFIDENCE" or "INVALID_DEVICE")
+     * @throws KeeprException if the job with the given id does not exist
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markJobReviewRequired(UUID jobId, 
                                      ParsingService.ExtractionResult result, 
@@ -185,6 +209,19 @@ public class IngestionProcessingService {
                 jobId, confResult.totalScore(), failureReason);
     }
 
+    /**
+     * Persist successful extraction results, create the associated device (and warranty when applicable), and mark the job completed.
+     *
+     * @param jobId the id of the extraction job to finalize
+     * @param result the parsed extraction result to persist and map into device/warranty requests
+     * @param confResult confidence metrics used to populate job confidence fields and field counts
+     * @param rawText the OCR-extracted text to store on the job
+     * @param ocrMs elapsed OCR time in milliseconds
+     * @param parseMs elapsed parsing time in milliseconds
+     * @param validateMs elapsed validation time in milliseconds
+     * @param warrantyVal validation result for the warranty; when non-null and valid (and the extraction includes a warranty end date), a warranty will be created
+     * @throws KeeprException if the job identified by {@code jobId} does not exist
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void finalizeJob(UUID jobId, 
                            ParsingService.ExtractionResult result, 
@@ -229,6 +266,12 @@ public class IngestionProcessingService {
         log.info("Job {} finalized successfully", jobId);
     }
 
+    /**
+     * Builds a CreateDeviceRequest from a parsing extraction result.
+     *
+     * @param result the extraction result containing productName, brand, model, category, and purchaseDate
+     * @return a CreateDeviceRequest populated with productName, brand, model, category (uses DEFAULT_CATEGORY when the extraction category is null), and purchaseDate
+     */
     private CreateDeviceRequest toDeviceRequest(ParsingService.ExtractionResult result) {
         return new CreateDeviceRequest(
                 result.productName(),

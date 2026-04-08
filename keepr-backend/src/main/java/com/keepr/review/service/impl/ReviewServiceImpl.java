@@ -33,6 +33,17 @@ public class ReviewServiceImpl implements ReviewService {
     private final WarrantyService warrantyService;
     private final ExtractionJobRepository extractionJobRepository;
 
+    /**
+     * Create and persist a new review task for the specified extraction job and household.
+     *
+     * The created task is initialized with status PENDING and contains the provided raw text and extraction data.
+     *
+     * @param jobId         the extraction job UUID this review task belongs to
+     * @param householdId   the household UUID that owns the review task
+     * @param rawText       the original extracted text to be reviewed
+     * @param extractionJson parsed extraction results associated with the task
+     * @return              the saved ReviewTask instance
+     */
     @Override
     public ReviewTask createReviewTask(UUID jobId, UUID householdId, String rawText, Map<String, Object> extractionJson) {
         ReviewTask task = new ReviewTask();
@@ -47,6 +58,12 @@ public class ReviewServiceImpl implements ReviewService {
         return savedTask;
     }
 
+    /**
+     * Retrieve pending review tasks for the specified household, ordered by creation time descending.
+     *
+     * @param householdId the household UUID whose pending review tasks should be returned
+     * @return a list of {@code ReviewTaskSummary} for tasks with status {@code PENDING}, ordered by {@code createdAt} descending
+     */
     @Override
     public List<ReviewTaskSummary> getPendingTasks(UUID householdId) {
         return reviewTaskRepository.findByHouseholdIdAndStatusOrderByCreatedAtDesc(householdId, ReviewTaskStatus.PENDING)
@@ -60,6 +77,14 @@ public class ReviewServiceImpl implements ReviewService {
                 .toList();
     }
 
+    /**
+     * Retrieve a review task belonging to the specified household and return its detailed response.
+     *
+     * @param taskId      the UUID of the review task to retrieve
+     * @param householdId the UUID of the household that must own the review task
+     * @return            a ReviewTaskResponse containing the task's id, jobId, rawText, extractionJson, status, and createdAt
+     * @throws KeeprException if no review task with the given id exists for the household (ErrorCode.NOT_FOUND)
+     */
     @Override
     public ReviewTaskResponse getTask(UUID taskId, UUID householdId) {
         ReviewTask task = reviewTaskRepository.findByIdAndHouseholdId(taskId, householdId)
@@ -75,6 +100,16 @@ public class ReviewServiceImpl implements ReviewService {
         );
     }
 
+    /**
+     * Confirms a review task: creates the device ingestion (and optional warranty), marks the task completed,
+     * and updates the associated extraction job to USER_CONFIRMED.
+     *
+     * @param taskId      the review task identifier
+     * @param householdId the household identifier owning the task
+     * @param request     confirmation details; must include a non-blank device name, may include warranty info
+     * @throws KeeprException if the review task or extraction job is not found, if the task is already completed,
+     *                        or if the request is missing required device information (device name must not be blank)
+     */
     @Override
     @Transactional
     public void confirmTask(UUID taskId, UUID householdId, ConfirmReviewRequest request) {

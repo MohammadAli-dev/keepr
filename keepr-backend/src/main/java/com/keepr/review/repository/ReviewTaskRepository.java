@@ -12,13 +12,40 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface ReviewTaskRepository extends JpaRepository<ReviewTask, UUID> {
 
-    List<ReviewTask> findByHouseholdIdAndStatusOrderByCreatedAtDesc(
+    /**
+             * Finds review tasks for the specified household with the given status, ordered by creation time descending.
+             *
+             * @param householdId the household UUID to filter tasks by
+             * @param status the ReviewTaskStatus to filter tasks by
+             * @return a list of matching ReviewTask entities ordered by createdAt in descending order; empty if none found
+             */
+            List<ReviewTask> findByHouseholdIdAndStatusOrderByCreatedAtDesc(
             UUID householdId, ReviewTaskStatus status);
 
-    Optional<ReviewTask> findByIdAndHouseholdId(UUID id, UUID householdId);
+    /**
+ * Finds a review task by its id that belongs to the specified household.
+ *
+ * @param id the id of the review task
+ * @param householdId the id of the household the review task must belong to
+ * @return an Optional containing the matching ReviewTask if found, otherwise Optional.empty()
+ */
+Optional<ReviewTask> findByIdAndHouseholdId(UUID id, UUID householdId);
 
-    Optional<ReviewTask> findByJobId(UUID jobId);
+    /**
+ * Finds a ReviewTask associated with the given job identifier.
+ *
+ * @param jobId the job UUID to match against a ReviewTask's jobId
+ * @return an Optional containing the matching ReviewTask if found, or Optional.empty() if none exists
+ */
+Optional<ReviewTask> findByJobId(UUID jobId);
 
+    /**
+     * Locates a ReviewTask by its identifier.
+     *
+     * @param id the UUID of the ReviewTask; must not be null
+     * @return an Optional containing the matching ReviewTask, or Optional.empty() if none is found
+     * @deprecated Prefer scoped lookup methods (for example, those that constrain by household or job) to avoid ambiguous global lookups.
+     */
     @Deprecated
     @Override
     @NonNull
