@@ -13,23 +13,23 @@ import org.springframework.stereotype.Repository;
 public interface ReviewTaskRepository extends JpaRepository<ReviewTask, UUID> {
 
     /**
-             * Finds review tasks for the specified household with the given status, ordered by creation time descending.
-             *
-             * @param householdId the household UUID to filter tasks by
-             * @param status the ReviewTaskStatus to filter tasks by
-             * @return a list of matching ReviewTask entities ordered by createdAt in descending order; empty if none found
-             */
-            List<ReviewTask> findByHouseholdIdAndStatusOrderByCreatedAtDesc(
+     * Finds review tasks for the specified household with the given status, ordered by creation time descending.
+     *
+     * @param householdId the household UUID to filter tasks by
+     * @param status the ReviewTaskStatus to filter tasks by
+     * @return a list of matching ReviewTask entities ordered by createdAt in descending order
+     */
+    List<ReviewTask> findByHouseholdIdAndStatusOrderByCreatedAtDesc(
             UUID householdId, ReviewTaskStatus status);
 
     /**
- * Finds a review task by its id that belongs to the specified household.
- *
- * @param id the id of the review task
- * @param householdId the id of the household the review task must belong to
- * @return an Optional containing the matching ReviewTask if found, otherwise Optional.empty()
- */
-Optional<ReviewTask> findByIdAndHouseholdId(UUID id, UUID householdId);
+     * Finds a review task by its id that belongs to the specified household.
+     *
+     * @param id the id of the review task
+     * @param householdId the id of the household the review task must belong to
+     * @return an Optional containing the matching ReviewTask if found, otherwise Optional.empty()
+     */
+    Optional<ReviewTask> findByIdAndHouseholdId(UUID id, UUID householdId);
 
     /**
      * Finds a review task by its household and job ID.

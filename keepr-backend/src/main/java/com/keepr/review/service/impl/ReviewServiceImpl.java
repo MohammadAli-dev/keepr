@@ -36,7 +36,8 @@ public class ReviewServiceImpl implements ReviewService {
     /**
      * Create and persist a new review task for the specified extraction job and household.
      *
-     * The created task is initialized with status PENDING and contains the provided raw text and extraction data.
+     * The created task is initialized with status PENDING and contains the provided
+     * raw text and extraction data.
      *
      * @param jobId         the extraction job UUID this review task belongs to
      * @param householdId   the household UUID that owns the review task
@@ -45,7 +46,8 @@ public class ReviewServiceImpl implements ReviewService {
      * @return              the saved ReviewTask instance
      */
     @Override
-    public ReviewTask createReviewTask(UUID jobId, UUID householdId, String rawText, Map<String, Object> extractionJson) {
+    public ReviewTask createReviewTask(UUID jobId, UUID householdId, String rawText,
+            Map<String, Object> extractionJson) {
         // Fast-path pre-check (non-blocking)
         var existing = reviewTaskRepository.findByHouseholdIdAndJobId(householdId, jobId);
         if (existing.isPresent()) {
@@ -65,9 +67,11 @@ public class ReviewServiceImpl implements ReviewService {
             log.info("[REVIEW_CREATED] jobId={} householdId={}", jobId, householdId);
             return savedTask;
         } catch (DataIntegrityViolationException e) {
-            log.warn("[REVIEW_EXISTS_RACE] Duplicate review task detected via DB constraint for jobId={}, returning existing", jobId);
+            log.warn("[REVIEW_EXISTS_RACE] Duplicate review task detected via DB constraint "
+                            + "for jobId={}, returning existing", jobId);
             return reviewTaskRepository.findByHouseholdIdAndJobId(householdId, jobId)
-                    .orElseThrow(() -> new KeeprException(ErrorCode.INTERNAL_ERROR, "Failed to fetch duplicate review task"));
+                    .orElseThrow(() -> new KeeprException(ErrorCode.INTERNAL_ERROR,
+                            "Failed to fetch duplicate review task"));
         }
     }
 
@@ -75,11 +79,13 @@ public class ReviewServiceImpl implements ReviewService {
      * Retrieve pending review tasks for the specified household, ordered by creation time descending.
      *
      * @param householdId the household UUID whose pending review tasks should be returned
-     * @return a list of {@code ReviewTaskSummary} for tasks with status {@code PENDING}, ordered by {@code createdAt} descending
+     * @return a list of {@code ReviewTaskSummary} for tasks with status {@code PENDING},
+     *         ordered by {@code createdAt} descending
      */
     @Override
     public List<ReviewTaskSummary> getPendingTasks(UUID householdId) {
-        return reviewTaskRepository.findByHouseholdIdAndStatusOrderByCreatedAtDesc(householdId, ReviewTaskStatus.PENDING)
+        return reviewTaskRepository.findByHouseholdIdAndStatusOrderByCreatedAtDesc(
+                        householdId, ReviewTaskStatus.PENDING)
                 .stream()
                 .map(task -> new ReviewTaskSummary(
                         task.getId(),
@@ -95,7 +101,8 @@ public class ReviewServiceImpl implements ReviewService {
      *
      * @param taskId      the UUID of the review task to retrieve
      * @param householdId the UUID of the household that must own the review task
-     * @return            a ReviewTaskResponse containing the task's id, jobId, rawText, extractionJson, status, and createdAt
+     * @return a ReviewTaskResponse containing the task's id, jobId, rawText,
+     *         extractionJson, status, and createdAt
      * @throws KeeprException if no review task with the given id exists for the household (ErrorCode.NOT_FOUND)
      */
     @Override
@@ -120,8 +127,9 @@ public class ReviewServiceImpl implements ReviewService {
      * @param taskId      the review task identifier
      * @param householdId the household identifier owning the task
      * @param request     confirmation details; must include a non-blank device name, may include warranty info
-     * @throws KeeprException if the review task or extraction job is not found, if the task is already completed,
-     *                        or if the request is missing required device information (device name must not be blank)
+     * @throws KeeprException if the review task or extraction job is not found,
+     *                        if the task is already completed, or if the request
+     *                        is missing required device information (device name must not be blank)
      */
     @Override
     @Transactional
@@ -134,7 +142,8 @@ public class ReviewServiceImpl implements ReviewService {
         }
 
         if (request.device() == null || request.device().name() == null || request.device().name().isBlank()) {
-            throw new KeeprException(ErrorCode.BAD_REQUEST, "Device information is required and name must not be blank");
+            throw new KeeprException(ErrorCode.BAD_REQUEST,
+                    "Device information is required and name must not be blank");
         }
 
         var deviceResponse = deviceService.createDeviceIngestion(request.device(), householdId);
@@ -153,7 +162,8 @@ public class ReviewServiceImpl implements ReviewService {
         task.setStatus(ReviewTaskStatus.COMPLETED);
         reviewTaskRepository.save(task);
 
-        ExtractionJob job = extractionJobRepository.findByIdAndHouseholdId(java.util.Objects.requireNonNull(task.getJobId()), householdId)
+        ExtractionJob job = extractionJobRepository.findByIdAndHouseholdId(
+                        java.util.Objects.requireNonNull(task.getJobId()), householdId)
                 .orElseThrow(() -> new KeeprException(ErrorCode.NOT_FOUND, "Extraction job not found"));
         job.setStatus(JobStatus.USER_CONFIRMED);
         extractionJobRepository.save(job);

@@ -64,7 +64,7 @@ These principles guide every architectural decision and code change:
 - **Idempotency First**: The system must be safe to retry. Creating a device from an invoice twice should result in exactly one device record.
 - **Fail Fast**: Oversized files, invalid types, or low-confidence results are rejected as early as possible in the pipeline.
 - **Observability First**: "If it isn't logged, it didn't happen." Every stage of the pipeline (OCR, Parse, Validate) emits timing metrics and success/failure metadata.
-- **Self-Describing Error Payloads**: API rejections should help the caller fix the problem. Validation failures return structured, machine-readable lists of field-specific errors.
+- **Self-Describing Error Payloads**: API rejections should help the caller fix the problem. Validation failures return structured, machine-readable lists of both field-specific and object-level (global) errors, providing a complete picture of why a request failed.
 
 ---
 
@@ -115,7 +115,7 @@ Indian consumers lose track of warranties and invoices because:
 | Manual device CRUD | ✅ Working |
 | Manual warranty creation | ✅ Working |
 | Integration tests with Testcontainers | ✅ Working |
-| Structured validation error reporting (field-level) | ✅ Working |
+| Robust validation error reporting (field + global) | ✅ Working |
 | Flyway database migrations (V1–V22) | ✅ Working |
 
 ### What Does NOT Exist Yet (Limitations)
@@ -234,6 +234,7 @@ Return {documentId, jobId, PENDING}    │  ├─ IF Low Confidence:      │
 **Validation (`ValidationService`):**
 - **Device validation (mandatory):** productName must be present AND confidence ≥ 0.5
 - **Warranty validation (optional):** If both start and end dates exist, end must not be before start
+- **Unified Error Reporting:** Validation failures from both Java Bean Validation (`@Valid`) and manual business rule checks are merged by the `GlobalExceptionHandler` into a structured, machine-readable `ErrorResponse` containing a deterministic `combinedMessage` and a list of `fieldErrors`.
 
 ### 6.3 Job Queue System
 

@@ -49,12 +49,13 @@ public class ReviewTask {
     private OffsetDateTime updatedAt;
 
     /**
- * Creates a new ReviewTask instance.
- *
- * <p>Fields required for persistence (id, status, createdAt, updatedAt) are initialized by JPA lifecycle
- * callbacks when the entity is persisted or updated.</p>
- */
-public ReviewTask() {}
+     * Creates a new ReviewTask instance.
+     *
+     * <p>Fields required for persistence (id, status, createdAt, updatedAt) are initialized by JPA lifecycle
+     * callbacks when the entity is persisted or updated.</p>
+     */
+    public ReviewTask() {
+    }
 
     /**
      * Initialize identity, timestamps, and default status before the entity is first persisted.

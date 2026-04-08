@@ -149,8 +149,11 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void confirmTask_shouldCreateDeviceAndWarranty_andMarkTaskCompleted() throws Exception {
-        CreateDeviceRequest deviceReq = new CreateDeviceRequest("test device confirmed", "brand", "model", "LAPTOP", LocalDate.now());
-        CreateWarrantyRequest warrantyReq = new CreateWarrantyRequest(null, "MANUFACTURER", LocalDate.now(), LocalDate.now().plusYears(1));
+        CreateDeviceRequest deviceReq = new CreateDeviceRequest("test device confirmed", "brand",
+                "model", "LAPTOP", LocalDate.now());
+        // Provide dummy UUID to satisfy @NotNull; service will use actual device ID
+        CreateWarrantyRequest warrantyReq = new CreateWarrantyRequest(UUID.randomUUID(), "MANUFACTURER",
+                LocalDate.now(), LocalDate.now().plusYears(1));
         ConfirmReviewRequest request = new ConfirmReviewRequest(deviceReq, warrantyReq);
 
         mockMvc.perform(post("/api/v1/review/tasks/" + testTask.getId() + "/confirm")
@@ -165,7 +168,8 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
         assertThat(taskInDb.getStatus()).isEqualTo(ReviewTaskStatus.COMPLETED);
 
         // Assert Job updated
-        ExtractionJob jobInDb = extractionJobRepository.findById(Objects.requireNonNull(testJob.getId())).orElseThrow();
+        ExtractionJob jobInDb = extractionJobRepository.findById(Objects.requireNonNull(testJob.getId()))
+                .orElseThrow();
         assertThat(jobInDb.getStatus()).isEqualTo(JobStatus.USER_CONFIRMED);
 
         // Assert Device Created
@@ -210,7 +214,41 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("KEEPR-400"))
                 .andExpect(jsonPath("$.fieldErrors[?(@.field == 'device.name')].message")
-                        .value(org.hamcrest.Matchers.hasItem("Product name is required")));
+                        .value(org.hamcrest.Matchers.hasItem("Device name is required")));
+    }
+
+    @Test
+    void confirmTask_withFuturePurchaseDate_shouldReturn400() throws Exception {
+        CreateDeviceRequest deviceReq = new CreateDeviceRequest("New Laptop", "Apple", "M3 Max",
+                "LAPTOP", LocalDate.now().plusDays(1));
+        ConfirmReviewRequest request = new ConfirmReviewRequest(deviceReq, null);
+
+        mockMvc.perform(post("/api/v1/review/tasks/" + testTask.getId() + "/confirm")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("KEEPR-400"))
+                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'device.purchaseDate')].message")
+                        .value(org.hamcrest.Matchers.hasItem("Purchase date cannot be in the future")));
+    }
+
+    @Test
+    void confirmTask_withInvalidWarrantyDateRange_shouldReturn400() throws Exception {
+        CreateDeviceRequest deviceReq = new CreateDeviceRequest("New Laptop", "Apple", "M3 Max",
+                "LAPTOP", LocalDate.now());
+        CreateWarrantyRequest warrantyReq = new CreateWarrantyRequest(
+                UUID.randomUUID(), "MANUFACTURER", LocalDate.now(), LocalDate.now().minusDays(1));
+        ConfirmReviewRequest request = new ConfirmReviewRequest(deviceReq, warrantyReq);
+
+        mockMvc.perform(post("/api/v1/review/tasks/" + testTask.getId() + "/confirm")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("KEEPR-400"))
+                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'warranty.validDateRange')].message")
+                        .value(org.hamcrest.Matchers.hasItem("End date must be on or after start date")));
     }
     
     @Test
@@ -232,7 +270,8 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
 
         MvcResult verifyResult = mockMvc.perform(post("/auth/verify-otp")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(String.format("{\"phoneNumber\": \"%s\", \"otpCode\": \"%s\"}", phoneNumber, code)))
+                .content(String.format("{\"phoneNumber\": \"%s\", \"otpCode\": \"%s\"}",
+                        phoneNumber, code)))
                 .andExpect(status().isOk())
                 .andReturn();
 

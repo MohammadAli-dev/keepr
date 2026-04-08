@@ -70,7 +70,8 @@ public class ReviewController {
             @PathVariable UUID id,
             @RequestBody @Valid ConfirmReviewRequest request,
             @AuthenticationPrincipal KeeprPrincipal principal) {
-        log.info("Received review task confirmation request for task {} from household {}", id, principal.householdId());
+        log.info("Received review task confirmation request for task {} from household {}",
+                id, principal.householdId());
         reviewService.confirmTask(id, principal.householdId(), request);
         return ResponseEntity.ok().build();
     }

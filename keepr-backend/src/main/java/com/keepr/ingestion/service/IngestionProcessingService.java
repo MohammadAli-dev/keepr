@@ -45,7 +45,6 @@ public class IngestionProcessingService {
     private final IngestionFailureService ingestionFailureService;
     private final ReviewService reviewService;
 
-
     @Value("${keepr.extraction.review-confidence-threshold:0.5}")
     private double reviewConfidenceThreshold;
 
@@ -212,7 +211,8 @@ public class IngestionProcessingService {
     }
 
     /**
-     * Persist successful extraction results, create the associated device (and warranty when applicable), and mark the job completed.
+     * Persist successful extraction results, create the associated device
+     * (and warranty when applicable), and mark the job completed.
      *
      * @param jobId the id of the extraction job to finalize
      * @param result the parsed extraction result to persist and map into device/warranty requests
@@ -221,7 +221,8 @@ public class IngestionProcessingService {
      * @param ocrMs elapsed OCR time in milliseconds
      * @param parseMs elapsed parsing time in milliseconds
      * @param validateMs elapsed validation time in milliseconds
-     * @param warrantyVal validation result for the warranty; when non-null and valid (and the extraction includes a warranty end date), a warranty will be created
+     * @param warrantyVal validation result for the warranty; when non-null and
+     *                    valid (and the extraction includes a warranty end date), a warranty will be created
      * @throws KeeprException if the job identified by {@code jobId} does not exist
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -272,7 +273,8 @@ public class IngestionProcessingService {
      * Builds a CreateDeviceRequest from a parsing extraction result.
      *
      * @param result the extraction result containing productName, brand, model, category, and purchaseDate
-     * @return a CreateDeviceRequest populated with productName, brand, model, category (uses DEFAULT_CATEGORY when the extraction category is null), and purchaseDate
+     * @return a CreateDeviceRequest populated with productName, brand, model,
+     *         category (uses DEFAULT_CATEGORY when the extraction category is null), and purchaseDate
      */
     private CreateDeviceRequest toDeviceRequest(ParsingService.ExtractionResult result) {
         return new CreateDeviceRequest(
