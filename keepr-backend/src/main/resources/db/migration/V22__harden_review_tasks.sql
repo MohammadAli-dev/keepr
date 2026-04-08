@@ -21,6 +21,7 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_review_tasks_updated_at ON review_tasks;
 CREATE TRIGGER update_review_tasks_updated_at
     BEFORE UPDATE ON review_tasks
     FOR EACH ROW

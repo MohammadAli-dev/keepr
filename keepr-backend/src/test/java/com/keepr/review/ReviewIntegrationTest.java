@@ -155,8 +155,8 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/v1/review/tasks/" + testTask.getId() + "/confirm")
                 .header("Authorization", "Bearer " + token)
-                .contentType(java.util.Objects.requireNonNull(MediaType.APPLICATION_JSON))
-                .content(java.util.Objects.requireNonNull(objectMapper.writeValueAsString(request))))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk());
 
         // Assert Task updated
@@ -192,10 +192,25 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/v1/review/tasks/" + testTask.getId() + "/confirm")
                 .header("Authorization", "Bearer " + token)
-                .contentType(java.util.Objects.requireNonNull(MediaType.APPLICATION_JSON))
-                .content(java.util.Objects.requireNonNull(objectMapper.writeValueAsString(request))))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("Task already processed"));
+    }
+    
+    @Test
+    void confirmTask_withBlankDeviceName_shouldReturn400() throws Exception {
+        CreateDeviceRequest deviceReq = new CreateDeviceRequest("", "Brand", "Model", "LAPTOP", LocalDate.now());
+        ConfirmReviewRequest request = new ConfirmReviewRequest(deviceReq, null);
+
+        mockMvc.perform(post("/api/v1/review/tasks/" + testTask.getId() + "/confirm")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("KEEPR-400"))
+                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'device.name')].message")
+                        .value(org.hamcrest.Matchers.hasItem("Product name is required")));
     }
     
     @Test
@@ -207,8 +222,8 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
 
     private String obtainJwt(String phoneNumber) throws Exception {
         mockMvc.perform(post("/auth/send-otp")
-                .contentType(java.util.Objects.requireNonNull(MediaType.APPLICATION_JSON))
-                .content(java.util.Objects.requireNonNull(String.format("{\"phoneNumber\": \"%s\"}", phoneNumber))))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(String.format("{\"phoneNumber\": \"%s\"}", phoneNumber)))
                 .andExpect(status().isOk());
 
         String code = requireNonNull(jdbcTemplate.queryForObject(
@@ -216,12 +231,12 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
                 String.class, phoneNumber));
 
         MvcResult verifyResult = mockMvc.perform(post("/auth/verify-otp")
-                .contentType(java.util.Objects.requireNonNull(MediaType.APPLICATION_JSON))
-                .content(java.util.Objects.requireNonNull(String.format("{\"phoneNumber\": \"%s\", \"otpCode\": \"%s\"}", phoneNumber, code))))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(String.format("{\"phoneNumber\": \"%s\", \"otpCode\": \"%s\"}", phoneNumber, code)))
                 .andExpect(status().isOk())
                 .andReturn();
 
-        var jsonNode = java.util.Objects.requireNonNull(objectMapper.readTree(verifyResult.getResponse().getContentAsString()).get("accessToken"));
+        var jsonNode = objectMapper.readTree(verifyResult.getResponse().getContentAsString()).get("accessToken");
         assertThat(jsonNode)
                 .withFailMessage("Expected 'accessToken' in the verify-otp response")
                 .isNotNull();

@@ -64,6 +64,7 @@ These principles guide every architectural decision and code change:
 - **Idempotency First**: The system must be safe to retry. Creating a device from an invoice twice should result in exactly one device record.
 - **Fail Fast**: Oversized files, invalid types, or low-confidence results are rejected as early as possible in the pipeline.
 - **Observability First**: "If it isn't logged, it didn't happen." Every stage of the pipeline (OCR, Parse, Validate) emits timing metrics and success/failure metadata.
+- **Self-Describing Error Payloads**: API rejections should help the caller fix the problem. Validation failures return structured, machine-readable lists of field-specific errors.
 
 ---
 
@@ -114,7 +115,8 @@ Indian consumers lose track of warranties and invoices because:
 | Manual device CRUD | ✅ Working |
 | Manual warranty creation | ✅ Working |
 | Integration tests with Testcontainers | ✅ Working |
-| Flyway database migrations (V1–V21) | ✅ Working |
+| Structured validation error reporting (field-level) | ✅ Working |
+| Flyway database migrations (V1–V22) | ✅ Working |
 
 ### What Does NOT Exist Yet (Limitations)
 
@@ -129,6 +131,7 @@ Indian consumers lose track of warranties and invoices because:
 | Multi-device invoice linking | Sprint 7+ |
 | Rate limiting | Sprint 6+ |
 | Redis Streams (currently using DB-backed polling) | Sprint 7+ |
+| Real-time push notifications | Sprint 8+ |
 
 ---
 

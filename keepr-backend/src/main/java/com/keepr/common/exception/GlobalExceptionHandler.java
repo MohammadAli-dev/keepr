@@ -8,6 +8,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import java.util.stream.Collectors;
+import java.util.List;
+
 /**
  * Global exception handler that translates exceptions into structured API responses.
  */
@@ -30,6 +34,36 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles Bean Validation failures and returns detailed field-level errors.
+     *
+     * @param ex the validation exception
+     * @return structured 400 response with field error details
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponse> handleValidationException(MethodArgumentNotValidException ex) {
+        log.error("Validation failed: {}", ex.getBindingResult().getAllErrors());
+        
+        List<ErrorResponse.ValidationError> fieldErrors = ex.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .map(err -> new ErrorResponse.ValidationError(err.getField(), err.getDefaultMessage()))
+                .toList();
+
+        String combinedMessage = fieldErrors.stream()
+                .map(e -> e.field() + ": " + e.message())
+                .collect(Collectors.joining("; "));
+
+        ErrorResponse body = new ErrorResponse(
+                ErrorCode.BAD_REQUEST.getCode(),
+                combinedMessage,
+                Instant.now(),
+                fieldErrors
+        );
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    /**
      * Handles any unhandled exception as a 500 Internal Server Error.
      *
      * @param ex the unexpected exception
@@ -41,7 +75,8 @@ public class GlobalExceptionHandler {
         ErrorResponse body = new ErrorResponse(
                 ErrorCode.INTERNAL_ERROR.getCode(),
                 ErrorCode.INTERNAL_ERROR.getDefaultMessage(),
-                Instant.now()
+                Instant.now(),
+                null
         );
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
