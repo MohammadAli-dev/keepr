@@ -9,3 +9,7 @@ spring:
     redis:
       host: localhost
       port: 6379
+
+keepr:
+  extraction:
+    review-confidence-threshold: 0.5

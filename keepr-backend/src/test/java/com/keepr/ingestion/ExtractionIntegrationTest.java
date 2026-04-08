@@ -2,6 +2,7 @@ package com.keepr.ingestion;
 
 
 import java.util.UUID;
+import java.time.LocalDate;
 import static java.util.Objects.requireNonNull;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,7 +13,9 @@ import com.keepr.ingestion.model.JobStatus;
 import com.keepr.ingestion.repository.ExtractionJobRepository;
 import com.keepr.ingestion.repository.RawDocumentRepository;
 import com.keepr.ingestion.service.ExtractionWorker;
+import com.keepr.review.repository.ReviewTaskRepository;
 import com.keepr.warranty.repository.WarrantyRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +56,9 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private ExtractionJobRepository extractionJobRepository;
 
+    @Autowired
+    private ReviewTaskRepository reviewTaskRepository;
+
     @MockitoBean
     private com.keepr.ingestion.service.OcrProvider ocrProvider;
 
@@ -63,7 +69,9 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @BeforeEach
+    @AfterEach
     void cleanDb() {
+        reviewTaskRepository.deleteAll();
         extractionJobRepository.deleteAll();
         rawDocumentRepository.deleteAll();
         warrantyRepository.deleteAll();
@@ -150,14 +158,18 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         extractionWorker.pollAndProcess();
 
         ExtractionJob job = extractionJobRepository.findById(requireNonNull(jobId)).orElseThrow();
-        assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
-        assertThat(job.getErrorMessage()).contains("Low extraction confidence");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.REVIEW_REQUIRED);
         assertThat(job.getFailureReason()).isEqualTo("INVALID_DEVICE");
         
         // Verify metrics are captured even on failure
         assertThat(job.getOcrMs()).isNotNull().isGreaterThanOrEqualTo(0);
         assertThat(job.getParseMs()).isNotNull().isGreaterThanOrEqualTo(0);
         
+        // Verify Review Task created
+        var reviewTasks = reviewTaskRepository.findAll();
+        assertThat(reviewTasks).hasSize(1);
+        assertThat(reviewTasks.get(0).getJobId()).isEqualTo(jobId);
+
         assertThat(deviceRepository.count()).isZero();
     }
 
@@ -174,9 +186,12 @@ class ExtractionIntegrationTest extends AbstractIntegrationTest {
         extractionWorker.pollAndProcess();
 
         ExtractionJob job = extractionJobRepository.findById(requireNonNull(jobId)).orElseThrow();
-        assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
-        assertThat(job.getErrorMessage()).contains("Missing mandatory field: productName");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.REVIEW_REQUIRED);
         assertThat(job.getFailureReason()).isEqualTo("INVALID_DEVICE");
+
+        // Verify Review Task created
+        var reviewTasks = reviewTaskRepository.findAll();
+        assertThat(reviewTasks).isNotEmpty();
     }
 
     private void setupOcrMock(String text) {

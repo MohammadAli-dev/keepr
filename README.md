@@ -7,22 +7,6 @@
 ## Table of Contents
 
 1. [Project Overview](#1-project-overview)
-2. [Problem Statement](#2-problem-statement)
-3. [System Capabilities](#3-system-capabilities)
-4. [System Limitations](#4-system-limitations)
-5. [High-Level Architecture](#5-high-level-architecture)
-6. [Detailed Architecture Breakdown](#6-detailed-architecture-breakdown)
-7. [Tech Stack](#7-tech-stack)
-8. [Folder Structure](#8-folder-structure)
-9. [Setup Instructions](#9-setup-instructions)
-10. [Running the Project](#10-running-the-project)
-11. [Running with Testcontainers](#11-running-with-testcontainers)
-12. [API Documentation](#12-api-documentation)
-13. [End-to-End Flow](#13-end-to-end-flow)
-14. [Retry & Failure Handling](#14-retry--failure-handling)
-15. [Data Model](#15-data-model)
-16. [Intelligence Layer](#16-intelligence-layer)
-17. [Metrics & Observability](#17-metrics--observability)
 2. [Mental Model](#2-mental-model)
 3. [Core Design Principles](#3-core-design-principles)
 4. [Problem Statement](#4-problem-statement)
@@ -80,6 +64,7 @@ These principles guide every architectural decision and code change:
 - **Idempotency First**: The system must be safe to retry. Creating a device from an invoice twice should result in exactly one device record.
 - **Fail Fast**: Oversized files, invalid types, or low-confidence results are rejected as early as possible in the pipeline.
 - **Observability First**: "If it isn't logged, it didn't happen." Every stage of the pipeline (OCR, Parse, Validate) emits timing metrics and success/failure metadata.
+- **Self-Describing Error Payloads**: API rejections should help the caller fix the problem. Validation failures return structured, machine-readable lists of both field-specific and object-level (global) errors, providing a complete picture of why a request failed.
 
 ---
 
@@ -104,7 +89,7 @@ Indian consumers lose track of warranties and invoices because:
 
 ## 5. Current Product State
 
-### What Works Today (Sprint 5)
+### What Works Today (Sprint 6)
 
 | Capability | Status |
 |---|---|
@@ -124,25 +109,29 @@ Indian consumers lose track of warranties and invoices because:
 | Zombie job recovery (30-minute threshold) | ✅ Working |
 | Per-job timing metrics (ocrMs, parseMs, validateMs) | ✅ Working |
 | Confidence breakdown (per-field JSONB) | ✅ Working |
+| Human review system for low-confidence extractions | ✅ Working |
+| Manual review task management (GET/POST endpoints) | ✅ Working |
+| JSONB extraction snapshots for manual correction | ✅ Working |
 | Manual device CRUD | ✅ Working |
 | Manual warranty creation | ✅ Working |
 | Integration tests with Testcontainers | ✅ Working |
-| Flyway database migrations (V1–V20) | ✅ Working |
+| Robust validation error reporting (field + global) | ✅ Working |
+| Flyway database migrations (V1–V22) | ✅ Working |
 
 ### What Does NOT Exist Yet (Limitations)
 
 | Missing Capability | Planned Sprint |
 |---|---|
-| Real OCR provider (Google Vision / Tesseract) | Sprint 6 |
-| AI/LLM fallback parsing (Claude API) | Sprint 6+ |
-| Human review system for low-confidence extractions | Sprint 6 |
+| Real OCR provider (Google Vision / Tesseract) | Sprint 7 |
+| AI/LLM fallback parsing (Claude API) | Sprint 7 |
 | Gmail / WhatsApp / SMS ingestion sources | Sprint 7+ |
 | Push notifications for warranty expiry | Sprint 8+ |
 | React Native mobile app | Sprint 9+ |
 | AWS S3 file storage (currently local filesystem) | Sprint 7 |
 | Multi-device invoice linking | Sprint 7+ |
 | Rate limiting | Sprint 6+ |
-| Redis Streams (currently using DB-backed polling) | Sprint 6+ |
+| Redis Streams (currently using DB-backed polling) | Sprint 7+ |
+| Real-time push notifications | Sprint 8+ |
 
 ---
 
@@ -203,11 +192,12 @@ FileStorageService.store()             ├────────────�
 IngestionMetadataService               │  ├─ Confidence scoring      │
   │ (@Transactional)                   │  └─ Validation checks       │
   │ 1. Save RawDocument                ├─────────────────────────────┤
-  │ 2. Create ExtractionJob (PENDING)  │ Phase C: Finalize           │
+  │ 2. Create ExtractionJob (PENDING)  │ Phase C: Routing Decision   │
   ▼                                    │ (REQUIRES_NEW transaction)  │
-Return {documentId, jobId, PENDING}    │  ├─ Create Device           │
-                                       │  ├─ Create Warranty (opt.)  │
-                                       │  └─ Mark COMPLETED          │
+Return {documentId, jobId, PENDING}    │  ├─ IF Low Confidence:      │
+                                       │  │  └─ Create ReviewTask    │
+                                       │  └─ ELSE:                   │
+                                       │     └─ Create Device/Warr.  │
                                        └─────────────────────────────┘
 ```
 
@@ -244,6 +234,7 @@ Return {documentId, jobId, PENDING}    │  ├─ Create Device           │
 **Validation (`ValidationService`):**
 - **Device validation (mandatory):** productName must be present AND confidence ≥ 0.5
 - **Warranty validation (optional):** If both start and end dates exist, end must not be before start
+- **Unified Error Reporting:** Validation failures from both Java Bean Validation (`@Valid`) and manual business rule checks are merged by the `GlobalExceptionHandler` into a structured, machine-readable `ErrorResponse` containing a deterministic `combinedMessage` and a list of `fieldErrors`.
 
 ### 6.3 Job Queue System
 
@@ -679,10 +670,87 @@ curl http://localhost:8080/api/v1/documents/jobs/<JOB_ID> \
 |---|---|
 | `PENDING` | Waiting to be picked up by the worker |
 | `PROCESSING` | Currently being processed (OCR + parsing) |
-| `COMPLETED` | Successfully extracted and created Device/Warranty |
-| `FAILED` | Permanently failed after max retries or validation failure |
+| `REVIEW_REQUIRED` | Low confidence or validation failure; needs human correction |
+| `USER_CONFIRMED` | Job completed after human review and correction |
+| `COMPLETED` | Successfully extracted and created Device/Warranty automatically |
+| `FAILED` | Permanently failed after max retries or unrecoverable error |
 
-### 12.4 Devices
+### 12.4 Human Review System
+
+#### GET /api/v1/review/tasks
+
+Lists all pending review tasks for the authenticated household.
+
+```bash
+curl http://localhost:8080/api/v1/review/tasks \
+  -H "Authorization: Bearer <JWT_TOKEN>"
+```
+
+**Response (200 OK):**
+```json
+[
+  {
+    "id": "e98e4f5a-...",
+    "jobId": "7c9e6679-...",
+    "status": "PENDING",
+    "createdAt": "2024-01-15T10:00:00Z"
+  }
+]
+```
+
+#### GET /api/v1/review/tasks/{taskId}
+
+Retrieves the full context for a specific review task, including the original OCR text and the extraction snapshot.
+
+```bash
+curl http://localhost:8080/api/v1/review/tasks/<TASK_ID> \
+  -H "Authorization: Bearer <JWT_TOKEN>"
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "e98e4f5a-...",
+  "jobId": "7c9e6679-...",
+  "rawText": "Mock OCR Invoice Text...",
+  "extractionJson": {
+    "productName": "MacBook Pro",
+    "brand": null,
+    "model": "M3 Max"
+  },
+  "status": "PENDING",
+  "createdAt": "2024-01-15T10:00:00Z"
+}
+```
+
+#### POST /api/v1/review/tasks/{taskId}/confirm
+
+Submits corrected data for a review task. Completes the task and creates the corresponding Device/Warranty.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/review/tasks/<TASK_ID>/confirm \
+  -H "Authorization: Bearer <JWT_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "device": {
+      "name": "Corrected Device Name",
+      "brand": "Brand",
+      "model": "Model",
+      "category": "LAPTOP",
+      "purchaseDate": "2024-01-15"
+    },
+    "warranty": {
+      "type": "MANUFACTURER",
+      "startDate": "2024-01-15",
+      "endDate": "2025-01-15"
+    }
+  }'
+```
+
+**Response (200 OK):**
+*Empty body (200 OK)*
+
+### 12.5 Devices
 
 #### POST /devices
 
@@ -930,6 +998,18 @@ ExtractionWorker.recoverStaleJobs() runs every 60 seconds:
 | `validate_ms` | INT | Validation stage duration in ms | V18 |
 | `total_fields_extracted` | INT | Total fields in breakdown | V18 |
 | `successful_fields` | INT | Fields with score > 0 | V18 |
+
+#### `review_tasks`
+| Column | Type | Constraints | Added In |
+|---|---|---|---|
+| `id` | UUID | PRIMARY KEY | V21 |
+| `job_id` | UUID | NOT NULL, FK → extraction_jobs | V21 |
+| `household_id` | UUID | NOT NULL, FK → households | V21 |
+| `raw_text` | TEXT | OCR snapshot for review | V21 |
+| `extraction_json` | JSONB | Data snapshot for correction | V21 |
+| `status` | VARCHAR(20) | PENDING/COMPLETED | V21 |
+| `created_at` | TIMESTAMPTZ | NOT NULL | V21 |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | V21 |
 
 ---
 
@@ -1188,7 +1268,8 @@ AND updated_at < NOW() - INTERVAL '30 minutes';
 
 | Sprint | Focus | Key Deliverables |
 |---|---|---|
-| 6 | Human Review + Real OCR | Google Vision integration, manual review queue for low-confidence extractions |
+| 6 | Human Review | Routing logic, review tasks, correction APIs (Completed) |
+| 7 | Real OCR + AI Fallback | Google Vision integration, LLM fallback parsing, S3 storage |
 | 7 | Multi-source Ingestion | Gmail API, WhatsApp Business API, S3 storage migration |
 | 8 | Notifications | Push notifications for warranty expiry, extraction completion |
 | 9 | Mobile App (Phase 1) | React Native (Expo) + TypeScript, basic upload and inventory views |

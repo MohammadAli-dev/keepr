@@ -1,0 +1,47 @@
+package com.keepr.review.repository;
+
+import com.keepr.review.model.ReviewTask;
+import com.keepr.review.model.ReviewTaskStatus;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.lang.NonNull;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface ReviewTaskRepository extends JpaRepository<ReviewTask, UUID> {
+
+    /**
+     * Finds review tasks for the specified household with the given status, ordered by creation time descending.
+     *
+     * @param householdId the household UUID to filter tasks by
+     * @param status the ReviewTaskStatus to filter tasks by
+     * @return a list of matching ReviewTask entities ordered by createdAt in descending order
+     */
+    List<ReviewTask> findByHouseholdIdAndStatusOrderByCreatedAtDesc(
+            UUID householdId, ReviewTaskStatus status);
+
+    /**
+     * Finds a review task by its id that belongs to the specified household.
+     *
+     * @param id the id of the review task
+     * @param householdId the id of the household the review task must belong to
+     * @return an Optional containing the matching ReviewTask if found, otherwise Optional.empty()
+     */
+    Optional<ReviewTask> findByIdAndHouseholdId(UUID id, UUID householdId);
+
+    /**
+     * Finds a review task by its household and job ID.
+     *
+     * @param householdId the household context
+     * @param jobId the ingestion job identifier
+     * @return the optional review task
+     */
+    Optional<ReviewTask> findByHouseholdIdAndJobId(UUID householdId, UUID jobId);
+
+    @Deprecated
+    @Override
+    @NonNull
+    Optional<ReviewTask> findById(@NonNull UUID id);
+}
