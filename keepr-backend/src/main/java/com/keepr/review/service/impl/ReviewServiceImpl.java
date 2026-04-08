@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,9 +54,15 @@ public class ReviewServiceImpl implements ReviewService {
         task.setExtractionJson(extractionJson);
         task.setStatus(ReviewTaskStatus.PENDING);
 
-        ReviewTask savedTask = reviewTaskRepository.save(task);
-        log.info("[REVIEW_CREATED] jobId={} householdId={}", jobId, householdId);
-        return savedTask;
+        try {
+            ReviewTask savedTask = reviewTaskRepository.save(task);
+            log.info("[REVIEW_CREATED] jobId={} householdId={}", jobId, householdId);
+            return savedTask;
+        } catch (DataIntegrityViolationException e) {
+            log.debug("Duplicate review task detected for jobId={}, returning existing", jobId);
+            return reviewTaskRepository.findByHouseholdIdAndJobId(householdId, jobId)
+                    .orElseThrow(() -> new KeeprException(ErrorCode.INTERNAL_ERROR, "Failed to fetch duplicate review task"));
+        }
     }
 
     /**
@@ -116,8 +123,8 @@ public class ReviewServiceImpl implements ReviewService {
         ReviewTask task = reviewTaskRepository.findByIdAndHouseholdId(taskId, householdId)
                 .orElseThrow(() -> new KeeprException(ErrorCode.NOT_FOUND, "Review task not found"));
 
-        if (task.getStatus() == ReviewTaskStatus.COMPLETED) {
-            throw new KeeprException(ErrorCode.BAD_REQUEST, "Review task already completed");
+        if (task.getStatus() != ReviewTaskStatus.PENDING) {
+            throw new KeeprException(ErrorCode.CONFLICT, "Task already processed");
         }
 
         if (request.device() == null || request.device().name() == null || request.device().name().isBlank()) {
@@ -140,7 +147,7 @@ public class ReviewServiceImpl implements ReviewService {
         task.setStatus(ReviewTaskStatus.COMPLETED);
         reviewTaskRepository.save(task);
 
-        ExtractionJob job = extractionJobRepository.findById(java.util.Objects.requireNonNull(task.getJobId()))
+        ExtractionJob job = extractionJobRepository.findByIdAndHouseholdId(java.util.Objects.requireNonNull(task.getJobId()), householdId)
                 .orElseThrow(() -> new KeeprException(ErrorCode.NOT_FOUND, "Extraction job not found"));
         job.setStatus(JobStatus.USER_CONFIRMED);
         job.setUpdatedAt(OffsetDateTime.now());

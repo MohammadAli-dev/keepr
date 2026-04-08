@@ -151,10 +151,10 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
         CreateWarrantyRequest warrantyReq = new CreateWarrantyRequest(null, "MANUFACTURER", LocalDate.now(), LocalDate.now().plusYears(1));
         ConfirmReviewRequest request = new ConfirmReviewRequest(deviceReq, warrantyReq);
 
-        mockMvc.perform(post(Objects.requireNonNull("/api/v1/review/tasks/" + testTask.getId() + "/confirm"))
+        mockMvc.perform(post(requireNonNull("/api/v1/review/tasks/" + testTask.getId() + "/confirm"))
                 .header("Authorization", "Bearer " + token)
-                .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
-                .content(Objects.requireNonNull(objectMapper.writeValueAsString(request))))
+                .contentType(requireNonNull(MediaType.APPLICATION_JSON))
+                .content(requireNonNull(objectMapper.writeValueAsString(request))))
                 .andExpect(status().isOk());
 
         // Assert Task updated
@@ -179,19 +179,19 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
     }
     
     @Test
-    void confirmTask_alreadyCompleted_shouldReturn400() throws Exception {
+    void confirmTask_alreadyProcessed_shouldReturn409() throws Exception {
         testTask.setStatus(ReviewTaskStatus.COMPLETED);
         reviewTaskRepository.save(testTask);
         
         CreateDeviceRequest deviceReq = new CreateDeviceRequest("Test Device", "Brand", null, "OTHER", null);
         ConfirmReviewRequest request = new ConfirmReviewRequest(deviceReq, null);
 
-        mockMvc.perform(post("/api/v1/review/tasks/" + testTask.getId() + "/confirm")
+        mockMvc.perform(post(requireNonNull("/api/v1/review/tasks/" + testTask.getId() + "/confirm"))
                 .header("Authorization", "Bearer " + token)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Review task already completed"));
+                .contentType(requireNonNull(MediaType.APPLICATION_JSON))
+                .content(requireNonNull(objectMapper.writeValueAsString(request))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Task already processed"));
     }
     
     @Test
@@ -204,7 +204,8 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
     private String obtainJwt(String phoneNumber) throws Exception {
         mockMvc.perform(post(requireNonNull("/auth/send-otp"))
                 .contentType(requireNonNull(MediaType.APPLICATION_JSON))
-                .content(requireNonNull(String.format("{\"phoneNumber\": \"%s\"}", phoneNumber))));
+                .content(requireNonNull(String.format("{\"phoneNumber\": \"%s\"}", phoneNumber))))
+                .andExpect(status().isOk());
 
         String code = requireNonNull(jdbcTemplate.queryForObject(
                 "SELECT otp_code FROM auth_otp WHERE phone_number = ? ORDER BY expires_at DESC LIMIT 1",
@@ -213,8 +214,13 @@ class ReviewIntegrationTest extends AbstractIntegrationTest {
         MvcResult verifyResult = mockMvc.perform(post(requireNonNull("/auth/verify-otp"))
                 .contentType(requireNonNull(MediaType.APPLICATION_JSON))
                 .content(requireNonNull(String.format("{\"phoneNumber\": \"%s\", \"otpCode\": \"%s\"}", phoneNumber, code))))
+                .andExpect(status().isOk())
                 .andReturn();
 
-        return requireNonNull(objectMapper.readTree(verifyResult.getResponse().getContentAsString()).get("accessToken")).asText();
+        var jsonNode = objectMapper.readTree(verifyResult.getResponse().getContentAsString()).get("accessToken");
+        assertThat(jsonNode)
+                .withFailMessage("Expected 'accessToken' in the verify-otp response")
+                .isNotNull();
+        return jsonNode.asText();
     }
 }

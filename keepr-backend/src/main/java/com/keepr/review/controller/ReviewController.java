@@ -7,7 +7,6 @@ import com.keepr.review.dto.ReviewTaskSummary;
 import com.keepr.review.service.ReviewService;
 import java.util.List;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -20,11 +19,14 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/review")
-@RequiredArgsConstructor
 @Slf4j
 public class ReviewController {
 
     private final ReviewService reviewService;
+
+    public ReviewController(ReviewService reviewService) {
+        this.reviewService = reviewService;
+    }
 
     /**
      * Gets all pending review tasks for the authenticated user's household.

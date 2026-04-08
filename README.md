@@ -698,6 +698,18 @@ curl http://localhost:8080/api/v1/review/tasks \
   -H "Authorization: Bearer <JWT_TOKEN>"
 ```
 
+**Response (200 OK):**
+```json
+[
+  {
+    "id": "e98e4f5a-...",
+    "jobId": "7c9e6679-...",
+    "status": "PENDING",
+    "createdAt": "2024-01-15T10:00:00Z"
+  }
+]
+```
+
 #### GET /api/v1/review/tasks/{taskId}
 
 Retrieves the full context for a specific review task, including the original OCR text and the extraction snapshot.
@@ -705,6 +717,22 @@ Retrieves the full context for a specific review task, including the original OC
 ```bash
 curl http://localhost:8080/api/v1/review/tasks/<TASK_ID> \
   -H "Authorization: Bearer <JWT_TOKEN>"
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "e98e4f5a-...",
+  "jobId": "7c9e6679-...",
+  "rawText": "Mock OCR Invoice Text...",
+  "extractionJson": {
+    "productName": "MacBook Pro",
+    "brand": null,
+    "model": "M3 Max"
+  },
+  "status": "PENDING",
+  "createdAt": "2024-01-15T10:00:00Z"
+}
 ```
 
 #### POST /api/v1/review/tasks/{taskId}/confirm
@@ -730,6 +758,9 @@ curl -X POST http://localhost:8080/api/v1/review/tasks/<TASK_ID>/confirm \
     }
   }'
 ```
+
+**Response (200 OK):**
+*Empty body (200 OK)*
 
 ### 12.5 Devices
 

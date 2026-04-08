@@ -32,20 +32,14 @@ public interface ReviewTaskRepository extends JpaRepository<ReviewTask, UUID> {
 Optional<ReviewTask> findByIdAndHouseholdId(UUID id, UUID householdId);
 
     /**
- * Finds a ReviewTask associated with the given job identifier.
- *
- * @param jobId the job UUID to match against a ReviewTask's jobId
- * @return an Optional containing the matching ReviewTask if found, or Optional.empty() if none exists
- */
-Optional<ReviewTask> findByJobId(UUID jobId);
-
-    /**
-     * Locates a ReviewTask by its identifier.
+     * Finds a review task by its household and job ID.
      *
-     * @param id the UUID of the ReviewTask; must not be null
-     * @return an Optional containing the matching ReviewTask, or Optional.empty() if none is found
-     * @deprecated Prefer scoped lookup methods (for example, those that constrain by household or job) to avoid ambiguous global lookups.
+     * @param householdId the household context
+     * @param jobId the ingestion job identifier
+     * @return the optional review task
      */
+    Optional<ReviewTask> findByHouseholdIdAndJobId(UUID householdId, UUID jobId);
+
     @Deprecated
     @Override
     @NonNull

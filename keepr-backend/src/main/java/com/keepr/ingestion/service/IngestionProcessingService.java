@@ -1,7 +1,6 @@
 package com.keepr.ingestion.service;
 
 import java.time.OffsetDateTime;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -103,6 +102,7 @@ public class IngestionProcessingService {
                     // Sprint 6: Route to Human Review
                     // Map validation failures to INVALID_DEVICE for legacy test compatibility
                     String reason = deviceVal.valid() ? "LOW_CONFIDENCE" : "INVALID_DEVICE";
+                    validateMs = System.currentTimeMillis() - valStart;
                     markJobReviewRequired(jobId, parsingResult, confResult, rawText, 
                             (int) ocrMs, (int) parseMs, (int) validateMs, reason);
                     status = "REVIEW_REQUIRED";
@@ -111,7 +111,9 @@ public class IngestionProcessingService {
 
                 warrantyVal = validationService.validateWarranty(parsingResult);
             } finally {
-                validateMs = System.currentTimeMillis() - valStart;
+                if (validateMs == 0) {
+                    validateMs = System.currentTimeMillis() - valStart;
+                }
             }
 
             finalizeJob(jobId, parsingResult, confResult, rawText, 
@@ -155,20 +157,20 @@ public class IngestionProcessingService {
     }
 
     /**
-     * Marks the extraction job as requiring human review, persists extraction and confidence details, and creates a review task.
+     * Flags a job as requiring human review and generates a review task.
+     * This runs in an independent transaction to ensure the status change and the
+     * creation of the review task are committed even if the broader process encounters
+     * non-terminal exceptions later, or fails prior to this stage in another transaction context.
      *
-     * <p>Updates the job's status to REVIEW_REQUIRED, stores raw text, extraction JSON, confidence metrics, timing and field counts,
-     * and then enqueues a review task via the review service.</p>
-     *
-     * @param jobId the identifier of the extraction job to update
-     * @param result the parsed extraction result to persist as extraction JSON
-     * @param confResult the confidence calculation result used to populate score, breakdown, and field counts
-     * @param rawText the OCR-extracted text associated with the job
-     * @param ocrMs elapsed time spent in OCR in milliseconds
-     * @param parseMs elapsed time spent in parsing in milliseconds
-     * @param validateMs elapsed time spent in validation in milliseconds
-     * @param failureReason a short code or message indicating why the job was routed to review (e.g., "LOW_CONFIDENCE" or "INVALID_DEVICE")
-     * @throws KeeprException if the job with the given id does not exist
+     * @param jobId         the unique identifier of the job
+     * @param result        the extracted data payload (will be serialized)
+     * @param confResult    the confidence scoring details for the job
+     * @param rawText       the raw OCR text output
+     * @param ocrMs         the time taken during OCR phase (in milliseconds)
+     * @param parseMs       the time taken during parsing phase (in milliseconds)
+     * @param validateMs    the time taken during validation phase (in milliseconds)
+     * @param failureReason the explicit reason code indicating why review is needed
+     * @throws KeeprException if the primary extraction job cannot be found
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markJobReviewRequired(UUID jobId, 
